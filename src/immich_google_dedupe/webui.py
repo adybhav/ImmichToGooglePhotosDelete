@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .trash import is_declared_candidate, load_candidates, open_sign_in_browser, trash_candidates
 from .util import atomic_write_json
+from .setup import check_immich_setup, discover_immich
 
 
 class WebError(ValueError):
@@ -54,16 +55,62 @@ def takeout_folders(match: dict[str, Any]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(folders))
 
 
+def setup_values(payload: dict[str, Any], *, require_takeout: bool = False) -> dict[str, Any]:
+    from .immich import parse_path_maps
+
+    takeout = str(payload.get("takeout") or "").strip()
+    immich_url = str(payload.get("immich_url") or "").strip()
+    output = str(payload.get("output") or "").strip()
+    raw_maps = payload.get("path_map") or []
+    if isinstance(raw_maps, str):
+        maps = [line.strip() for line in raw_maps.splitlines() if line.strip()]
+    elif isinstance(raw_maps, list) and all(isinstance(line, str) for line in raw_maps):
+        maps = [line.strip() for line in raw_maps if line.strip()]
+    else:
+        raise WebError("Enter one Docker path mapping per line")
+    if len(maps) > 32:
+        raise WebError("Use at most 32 Docker path mappings")
+    try:
+        workers = int(payload.get("workers"))
+    except (TypeError, ValueError) as exc:
+        raise WebError("Workers must be a positive integer") from exc
+    if workers < 1 or workers > 32:
+        raise WebError("Choose between 1 and 32 workers")
+    if require_takeout and (not takeout or not Path(takeout).expanduser().is_dir()):
+        raise WebError("Takeout folder does not exist")
+    if not immich_url.startswith(("http://", "https://")):
+        raise WebError("Immich URL must begin with http:// or https://")
+    if not output:
+        raise WebError("Choose a report path")
+    try:
+        parse_path_maps(maps)
+    except ValueError as exc:
+        raise WebError(str(exc)) from exc
+    return {
+        "takeout": takeout, "immich_url": immich_url, "path_map": maps,
+        "output": str(Path(output).expanduser().resolve()), "workers": workers,
+    }
+
+
 class LocalApp:
     def __init__(self, args: argparse.Namespace):
         self.lock = threading.RLock()
+        self.settings_path = Path(getattr(args, "settings_path", None) or Path.cwd() / ".immich-gphotos-settings.json")
+        saved: dict[str, Any] = {}
+        if self.settings_path.is_file():
+            try:
+                content = json.loads(self.settings_path.read_text(encoding="utf-8"))
+                if isinstance(content, dict) and content.get("version") == 1:
+                    saved = content
+            except (OSError, ValueError):
+                pass
         self.config = {
-            "takeout": args.takeout,
-            "immich_url": args.immich_url,
-            "path_map": list(args.path_map),
-            "output": str(Path(args.output).expanduser().resolve()),
-            "workers": args.workers,
-            "browser_channel": args.browser_channel,
+            "takeout": args.takeout if args.takeout is not None else saved.get("takeout", ""),
+            "immich_url": args.immich_url if args.immich_url is not None else saved.get("immich_url", "http://localhost:2283"),
+            "path_map": list(args.path_map if args.path_map is not None else saved.get("path_map", [])),
+            "output": str(Path(args.output if args.output is not None else saved.get("output", "reports/duplication-report.json")).expanduser().resolve()),
+            "workers": args.workers if args.workers is not None else saved.get("workers", 4),
+            "browser_channel": args.browser_channel if args.browser_channel is not None else saved.get("browser_channel", "auto"),
         }
         self.report_path = Path(self.config["output"])
         self.report: dict[str, Any] | None = None
@@ -97,6 +144,38 @@ class LocalApp:
                 "message": message,
                 "level": level,
             })
+
+    def _save_settings(self) -> None:
+        atomic_write_json(self.settings_path, {"version": 1, **self.config})
+
+    def save_setup(self, payload: dict[str, Any]) -> None:
+        values = setup_values(payload)
+        with self.lock:
+            if self.job.get("status") == "running":
+                raise WebError("Wait for the current job before changing setup", 409)
+            self.config.update(values)
+            self._save_settings()
+        self.log("Local setup saved. The API key was not saved.")
+
+    def check_setup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        values = setup_values(payload)
+        key = str(payload.get("api_key") or os.getenv("IMMICH_API_KEY") or "").strip()
+        if not key:
+            raise WebError("Enter an Immich API key to check access")
+        with self.lock:
+            if self.job.get("status") == "running":
+                raise WebError("Wait for the current job before checking setup", 409)
+        try:
+            result = check_immich_setup(values["immich_url"], key, values["path_map"])
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise WebError(f"Immich setup check failed: {exc}") from exc
+        return {**result, "takeout_exists": Path(values["takeout"]).expanduser().is_dir() if values["takeout"] else False}
+
+    def discover_docker(self) -> dict[str, Any]:
+        try:
+            return {"containers": discover_immich()}
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise WebError(str(exc)) from exc
 
     def _selection_path(self) -> Path:
         return self.report_path.with_name("review-selection.json")
@@ -361,33 +440,18 @@ class LocalApp:
         key = str(payload.get("api_key") or os.getenv("IMMICH_API_KEY") or "").strip()
         if not key:
             raise WebError("Enter an Immich API key to build the report")
-        takeout = str(payload.get("takeout") or "").strip()
-        immich_url = str(payload.get("immich_url") or "").strip()
-        output = str(payload.get("output") or "").strip()
-        path_map = str(payload.get("path_map") or "").strip()
-        try:
-            workers = int(payload.get("workers"))
-        except (TypeError, ValueError) as exc:
-            raise WebError("Workers must be a positive integer") from exc
-        if workers < 1 or workers > 32:
-            raise WebError("Choose between 1 and 32 workers")
-        if not Path(takeout).is_dir():
-            raise WebError("Takeout folder does not exist")
-        if not immich_url.startswith(("http://", "https://")):
-            raise WebError("Immich URL must begin with http:// or https://")
-        from .immich import parse_path_maps
-
-        if path_map:
-            parse_path_maps([path_map])
-        if not output:
-            raise WebError("Choose a report path")
+        values = setup_values(payload, require_takeout=True)
+        takeout = values["takeout"]
+        immich_url = values["immich_url"]
+        output = values["output"]
+        path_maps = values["path_map"]
+        workers = values["workers"]
         with self.lock:
+            if self.job.get("status") == "running":
+                raise WebError("A job is already running", 409)
+            self.config.update(values)
+            self._save_settings()
             self._begin_job("scan")
-            self.config.update({
-                "takeout": takeout, "immich_url": immich_url,
-                "path_map": [path_map] if path_map else [],
-                "output": str(Path(output).expanduser().resolve()), "workers": workers,
-            })
 
         def work() -> None:
             self.log("Starting read-only duplication scan.")
@@ -401,7 +465,7 @@ class LocalApp:
 
                 scan_args = argparse.Namespace(
                     takeout=takeout, immich_url=immich_url, output=output,
-                    path_map=[path_map] if path_map else [], immich_storage=None,
+                    path_map=path_maps, immich_storage=None,
                     immich_api_key=key, workers=workers, time_tolerance=2,
                     timeout=30.0, insecure=False,
                 )
@@ -472,7 +536,7 @@ class LocalApp:
             browser_channel = str(self.config["browser_channel"])
 
         def work() -> None:
-            self.log(f"Verifying {len(selected_urls)} selected Takeout evidence files before opening Chrome.")
+            self.log(f"Verifying {len(selected_urls)} selected Takeout evidence files before opening the browser.")
             try:
                 if hashlib.sha256(report_path.read_bytes()).hexdigest() != report_digest:
                     raise WebError("The report changed since review. Reload the UI and review it again")
@@ -623,6 +687,8 @@ def make_handler(app: LocalApp, token: str):
             try:
                 if parsed.path == "/api/state":
                     self._json(app.state(after=int(query.get("after", ["0"])[0])))
+                elif parsed.path == "/api/setup/docker":
+                    self._json(app.discover_docker())
                 elif parsed.path == "/api/candidates":
                     self._json(app.candidate_page(
                         offset=int(query.get("offset", ["0"])[0]),
@@ -673,6 +739,11 @@ def make_handler(app: LocalApp, token: str):
                 path = urlsplit(self.path).path
                 if path == "/api/scan":
                     app.start_scan(payload)
+                elif path == "/api/setup/save":
+                    app.save_setup(payload)
+                elif path == "/api/setup/check":
+                    self._json(app.check_setup(payload))
+                    return
                 elif path == "/api/selection":
                     app.set_selection(payload)
                 elif path == "/api/trash":

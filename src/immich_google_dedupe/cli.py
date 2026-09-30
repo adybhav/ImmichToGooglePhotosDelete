@@ -215,14 +215,13 @@ def build_parser() -> argparse.ArgumentParser:
     summary.set_defaults(func=run_summary)
 
     web = sub.add_parser("web", help="Open a local browser UI for scanning, review, and guarded trash runs")
-    web.add_argument(
-        "--takeout", default=r"D:\GoogleTakeoutForImmich-20260929\Takeout\Google Photos"
-    )
-    web.add_argument("--immich-url", default="http://localhost:2283")
-    web.add_argument("--path-map", action="append", default=[r"/data=D:\immich-library"])
-    web.add_argument("--output", default="reports/duplication-report.json")
-    web.add_argument("--workers", type=positive_workers, default=4)
-    web.add_argument("--browser-channel", choices=("auto", "chrome", "msedge", "chromium"), default="chrome")
+    web.add_argument("--takeout", help="Pre-fill the extracted Google Photos Takeout folder")
+    web.add_argument("--immich-url", help="Pre-fill the Immich URL")
+    web.add_argument("--path-map", action="append", help="Pre-fill a container-to-local path mapping; repeatable")
+    web.add_argument("--output", help="Report path (default: reports/duplication-report.json)")
+    web.add_argument("--workers", type=positive_workers, help="Concurrent hash workers (default: 4)")
+    web.add_argument("--browser-channel", choices=("auto", "chrome", "msedge", "chromium"),
+                     help="Browser for Google sign-in and trash (default: auto)")
     web.add_argument("--port", type=int, default=8765, help="Localhost port (default: 8765)")
     web.add_argument("--no-open", action="store_true", help="Print the URL without opening a browser")
     web.set_defaults(func=run_web)

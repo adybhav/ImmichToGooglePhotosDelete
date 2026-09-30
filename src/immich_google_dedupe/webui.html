@@ -31,9 +31,21 @@
     .step { display:inline-grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--mint); color:var(--teal-dark); font-size:12px; font-weight:800; margin-right:8px; }
     .setup-body { padding:20px 24px 24px; display:grid; gap:14px; }
     label.field { display:grid; gap:6px; font-size:12px; font-weight:700; color:#496168; }
-    label.field input { width:100%; height:41px; border:1px solid #cddcdd; background:#fbfdfd; border-radius:9px; padding:9px 11px; color:var(--ink); outline:0; font-weight:450; font-size:13px; }
-    label.field input:focus,.search input:focus,.confirm-input:focus { border-color:var(--teal); box-shadow:0 0 0 3px #cae9e3; }
+    label.field input,label.field textarea { width:100%; border:1px solid #cddcdd; background:#fbfdfd; border-radius:9px; padding:9px 11px; color:var(--ink); outline:0; font-weight:450; font-size:13px; }
+    label.field input { height:41px; }
+    label.field textarea { min-height:78px; resize:vertical; font-family:Consolas,"Cascadia Code",monospace; }
+    label.field input:focus,label.field textarea:focus,.search input:focus,.confirm-input:focus { border-color:var(--teal); box-shadow:0 0 0 3px #cae9e3; }
     .form-two { display:grid; grid-template-columns:1fr 90px; gap:10px; }
+    .setup-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .setup-actions button { font-size:12px; }
+    .setup-actions button:first-child { grid-column:1/-1; }
+    .setup-results { border:1px solid var(--line); border-radius:10px; padding:11px 12px; background:#f7fbfa; font-size:12px; color:#426168; overflow-wrap:anywhere; }
+    .setup-results:empty { display:none; }
+    .setup-results strong { display:block; color:var(--ink); margin-bottom:5px; }
+    .setup-results p { margin:5px 0; }
+    .setup-results .suggestion { border-top:1px solid var(--line); padding-top:8px; margin-top:8px; }
+    .setup-results .suggestion button { min-height:30px; padding:4px 9px; font-size:11px; margin-top:5px; }
+    .setup-results code { font-size:11px; }
     .microcopy { font-size:12px; color:var(--muted); margin:0; }
     .primary,.outline,.danger,.quiet { border-radius:10px; border:1px solid transparent; min-height:42px; padding:9px 15px; font-weight:750; }
     .primary { background:var(--teal); color:#fff; }
@@ -150,12 +162,15 @@
       <section class="panel">
         <div class="panel-head"><h2><span class="step">1</span>Build report</h2><span class="hint">Read-only scan</span></div>
         <div class="setup-body">
-          <label class="field">Extracted Google Photos Takeout folder<input id="takeout" spellcheck="false"></label>
-          <label class="field">Immich URL<input id="immich-url" spellcheck="false"></label>
-          <label class="field">Docker path mapping<input id="path-map" spellcheck="false"></label>
+          <label class="field">Extracted Google Photos Takeout folder<input id="takeout" spellcheck="false" placeholder="Path on this computer, for example /home/me/Takeout/Google Photos"></label>
+          <label class="field">Immich URL<input id="immich-url" spellcheck="false" placeholder="http://localhost:2283"></label>
+          <label class="field">Docker path mappings (optional, one per line)<textarea id="path-map" spellcheck="false" placeholder="/data=/path/to/immich-library"></textarea></label>
+          <p class="microcopy">Each mapping pairs the path Immich sees with a folder this app can read. For example, <code>/data=D:\immich-library</code> on Windows or <code>/data=/srv/immich/library</code> on Linux. External libraries need accessible originals for exact matches.</p>
           <label class="field">Report JSON path<input id="output" spellcheck="false"></label>
           <div class="form-two"><label class="field">Immich API key<input id="api-key" type="password" placeholder="Enter for each scan" autocomplete="off"></label><label class="field">Workers<input id="workers" type="number" min="1" max="32"></label></div>
-          <p class="microcopy">Your API key stays in this running app process and is not saved in the report or browser storage. Scanning never changes photos.</p>
+          <div class="setup-actions"><button id="docker-btn" class="outline">Find Immich in Docker</button><button id="check-btn" class="outline">Check setup</button><button id="save-btn" class="outline">Save settings</button></div>
+          <div id="setup-results" class="setup-results" aria-live="polite"></div>
+          <p class="microcopy">The API key is used for checks and scans, never saved in local settings, the report, or browser storage. Setup checks read only a small Immich sample; scanning never changes photos.</p>
           <button id="scan-btn" class="primary full">Build duplication report</button>
         </div>
       </section>
@@ -166,7 +181,7 @@
           <div class="metric panel selected"><span>Selected to trash</span><strong id="metric-selected">—</strong></div>
           <div class="metric panel done"><span>Already moved</span><strong id="metric-completed">—</strong></div>
         </div>
-        <section class="panel"><div class="panel-head"><h2><span class="step">2</span>Move selected matches</h2><span class="hint">Google Photos trash · recoverable</span></div><div class="size-filter"><div class="size-filter-main"><label class="size-filter-label"><input id="size-filter-enabled" type="checkbox" checked> Keep photos and videos at or below</label><div class="size-filter-controls"><input id="size-filter-mib" type="number" min="0" max="100000" step="0.1" value="2" aria-label="Minimum media size in MiB"><span>MiB</span><button id="size-filter-apply" class="outline">Apply</button></div></div><p id="size-filter-status">Uses Takeout file sizes already saved in the report.</p></div><div class="auth-row"><div><strong>First, sign in with regular Chrome</strong><p>Verify your Google account, then close the entire sign-in Chrome window before the test run. Closing only a tab may leave its profile in use.</p></div><button id="auth-btn" class="outline">Open sign-in browser</button></div><div class="action-row"><div class="action-card"><h3>Test one item</h3><p>Open Chrome, verify the already signed-in Google account, and move the first selected exact match.</p><button id="test-btn" class="outline" disabled>Test 1 selected item</button></div><div class="action-card red"><h3>Move the remaining selection</h3><p>Uses your album and photo choices. Items already recorded as moved are skipped.</p><button id="all-btn" class="danger" disabled>Move selected to trash</button></div></div></section>
+        <section class="panel"><div class="panel-head"><h2><span class="step">2</span>Move selected matches</h2><span class="hint">Google Photos trash · recoverable</span></div><div class="size-filter"><div class="size-filter-main"><label class="size-filter-label"><input id="size-filter-enabled" type="checkbox" checked> Keep photos and videos at or below</label><div class="size-filter-controls"><input id="size-filter-mib" type="number" min="0" max="100000" step="0.1" value="2" aria-label="Minimum media size in MiB"><span>MiB</span><button id="size-filter-apply" class="outline">Apply</button></div></div><p id="size-filter-status">Uses Takeout file sizes already saved in the report.</p></div><div class="auth-row"><div><strong>First, sign in with Chrome or Edge</strong><p>Verify your Google account, then close the entire sign-in browser window before the test run. Closing only a tab may leave its profile in use.</p></div><button id="auth-btn" class="outline">Open sign-in browser</button></div><div class="action-row"><div class="action-card"><h3>Test one item</h3><p>Open the browser, verify the already signed-in Google account, and move the first selected exact match.</p><button id="test-btn" class="outline" disabled>Test 1 selected item</button></div><div class="action-card red"><h3>Move the remaining selection</h3><p>Uses your album and photo choices. Items already recorded as moved are skipped.</p><button id="all-btn" class="danger" disabled>Move selected to trash</button></div></div></section>
         <section class="panel"><div class="status-panel"><div class="status-top"><div class="status-title"><span class="status-dot" id="status-dot"></span><span id="status-text">Ready to build a report</span></div><span class="hint" id="status-detail"></span></div><div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div><div class="login-gate" id="login-gate"><strong>Check the Google account in Chrome</strong><p>Verify the account is already signed in. If Google asks for sign-in, stop this run and use the separate sign-in browser button first.</p><button id="login-btn" class="primary">I verified the account · Continue</button></div><div class="stop-row"><button id="stop-btn" class="quiet" style="display:none">Stop after current item</button></div></div><div class="console" id="console"><div class="console-empty">Progress and results will appear here.</div></div></section>
       </div>
     </div>
@@ -198,8 +213,63 @@
     }
     function setConfig(config) {
       $('takeout').value = config.takeout; $('immich-url').value = config.immich_url;
-      $('path-map').value = (config.path_map || [])[0] || ''; $('output').value = config.output;
+      $('path-map').value = (config.path_map || []).join('\n'); $('output').value = config.output;
       $('workers').value = config.workers; configLoaded = true;
+    }
+    function setupPayload() {
+      return {takeout:$('takeout').value,immich_url:$('immich-url').value,
+        path_map:$('path-map').value,output:$('output').value,workers:$('workers').value};
+    }
+    function setupMessage(title, details) {
+      const box = $('setup-results'); box.replaceChildren();
+      const heading = document.createElement('strong'); heading.textContent = title; box.append(heading);
+      for (const detail of details) { const p = document.createElement('p'); p.textContent = detail; box.append(p); }
+      return box;
+    }
+    function renderDocker(containers) {
+      if (!containers.length) { setupMessage('No Immich server found in local Docker', ['Enter the URL and any needed mappings manually. The Docker CLI must point to the same host as Immich.']); return; }
+      const box = setupMessage('Immich containers found', ['Suggestions are checked against paths this app can read. Click to use a URL or mapping.']);
+      for (const container of containers) {
+        const row = document.createElement('div'); row.className = 'suggestion';
+        const title = document.createElement('strong'); title.textContent = container.name; row.append(title);
+        if (container.url) {
+          const button = document.createElement('button'); button.className = 'outline'; button.textContent = 'Use ' + container.url;
+          button.onclick = () => { $('immich-url').value = container.url; toast('Immich URL filled. Click Check setup to test it.'); };
+          row.append(button);
+        } else { const p = document.createElement('p'); p.textContent = 'No published Immich port found; enter the reachable URL.'; row.append(p); }
+        for (const mount of container.mounts) {
+          const p = document.createElement('p');
+          p.textContent = `${mount.container_path} ← ${mount.docker_source}` + (mount.local_path ? ` (readable here: ${mount.local_path})` : ' (source not readable from this app)');
+          row.append(p);
+          if (mount.mapping) {
+            const button = document.createElement('button'); button.className = 'outline'; button.textContent = 'Add mapping';
+            button.onclick = () => {
+              const lines = $('path-map').value.split('\n').map(line => line.trim()).filter(Boolean);
+              if (!lines.includes(mount.mapping)) lines.push(mount.mapping);
+              $('path-map').value = lines.join('\n'); toast('Mapping added. Click Check setup to test sample paths.');
+            };
+            row.append(button);
+          }
+        }
+        box.append(row);
+      }
+    }
+    function renderSetupCheck(result) {
+      const details = [
+        `Connected to Immich ${result.version}. Read ${result.sampled} asset records without hashing them.`,
+        result.takeout_exists ? 'Takeout folder exists on this computer.' : 'Takeout folder is missing or not set.',
+        `${result.readable}/${result.sampled} sampled originals are readable by this app.`,
+        'Ordinary uploads can use Immich content checksums even when their originals are not readable here.',
+        result.external ? `${result.readable_external}/${result.external} sampled external-library originals are readable.` : 'No external-library assets appeared in this sample; their mappings remain unverified.'
+      ];
+      if (!result.sampled) details.push('This API key returned no assets. Check that it belongs to the intended Immich user and has asset read access.');
+      const box = setupMessage('Setup check', details);
+      for (const example of result.examples) {
+        const p = document.createElement('p'); p.textContent = `${example.external ? 'External' : 'Upload'}: ${example.immich_path} → ${example.local_path || 'not readable here'}`; box.append(p);
+      }
+      if (result.external > result.readable_external) {
+        const p = document.createElement('p'); p.textContent = 'Some sampled external originals are not readable. Add their container-to-local mappings before scanning for exact matches.'; box.append(p);
+      }
     }
     function appendEvents(events) {
       const consoleBox = $('console');
@@ -246,6 +316,7 @@
       $('metric-completed').textContent = report.exists ? formatNumber(counts.completed) : '—';
       $('report-time').textContent = report.exists ? 'Report · ' + new Date(report.generated_at).toLocaleString() : 'No report loaded yet';
       $('scan-btn').disabled = busy; $('scan-btn').textContent = busy && job.kind === 'scan' ? 'Scanning…' : 'Build duplication report';
+      $('docker-btn').disabled = busy; $('check-btn').disabled = busy; $('save-btn').disabled = busy;
       $('auth-btn').disabled = busy;
       $('size-filter-enabled').disabled = busy || !report.exists;
       $('size-filter-mib').disabled = busy || !report.exists;
@@ -315,12 +386,28 @@
       finally { refreshing = false; }
     }
     $('scan-btn').onclick = async () => {
-      const payload = {takeout:$('takeout').value,immich_url:$('immich-url').value,path_map:$('path-map').value,output:$('output').value,workers:$('workers').value,api_key:$('api-key').value};
+      const payload = {...setupPayload(),api_key:$('api-key').value};
       try { await api('/api/scan',payload); $('api-key').value = ''; toast('Scan started. Progress will appear below.'); await refresh(true); }
       catch(error) { toast(error.message,true); }
     };
+    $('docker-btn').onclick = async () => {
+      const button = $('docker-btn'); button.disabled = true; button.textContent = 'Checking Docker…';
+      try { const result = await api('/api/setup/docker'); renderDocker(result.containers); }
+      catch(error) { setupMessage('Docker discovery unavailable', [error.message]); }
+      finally { button.disabled = false; button.textContent = 'Find Immich in Docker'; }
+    };
+    $('check-btn').onclick = async () => {
+      const button = $('check-btn'); button.disabled = true; button.textContent = 'Checking…';
+      try { const result = await api('/api/setup/check',{...setupPayload(),api_key:$('api-key').value}); renderSetupCheck(result); }
+      catch(error) { setupMessage('Setup check failed', [error.message]); }
+      finally { button.disabled = false; button.textContent = 'Check setup'; }
+    };
+    $('save-btn').onclick = async () => {
+      try { await api('/api/setup/save',setupPayload()); toast('Local settings saved. API key was not saved.'); }
+      catch(error) { toast(error.message,true); }
+    };
     $('auth-btn').onclick = async () => {
-      try { await api('/api/open-sign-in',{}); toast('Sign in with regular Chrome/Edge, then close the entire sign-in window before testing one item.'); await refresh(true); }
+      try { await api('/api/open-sign-in',{}); toast('Sign in with regular Chrome or Edge, then close the entire sign-in window before testing one item.'); await refresh(true); }
       catch(error) { toast(error.message,true); }
     };
     $('size-filter-apply').onclick = async () => {
@@ -340,14 +427,14 @@
       if (!count) return;
       modalScope = scope; modalPhrase = `TRASH ${count} GOOGLE PHOTOS ITEMS`;
       $('modal-title').textContent = scope === 'one' ? 'Test one selected item' : `Move ${formatNumber(count)} selected items?`;
-      $('modal-copy').textContent = 'Only exact hash matches with Google Photos URLs are included. Sign in first using the separate button and close that window. The trash run will open Chrome for account verification before moving anything.';
+      $('modal-copy').textContent = 'Only exact hash matches with Google Photos URLs are included. Sign in first using the separate button and close that window. The trash run will open the browser for account verification before moving anything.';
       $('modal-phrase').textContent = modalPhrase; $('confirm-input').value = '';
       $('confirm-dialog').showModal(); $('confirm-input').focus();
     }
     $('test-btn').onclick = () => openConfirm('one'); $('all-btn').onclick = () => openConfirm('all');
     $('modal-cancel').onclick = () => $('confirm-dialog').close();
     $('modal-submit').onclick = async () => {
-      try { await api('/api/trash',{scope:modalScope,confirmation:$('confirm-input').value}); $('confirm-dialog').close(); toast('Evidence check started. Chrome will open after verification.'); await refresh(true); }
+      try { await api('/api/trash',{scope:modalScope,confirmation:$('confirm-input').value}); $('confirm-dialog').close(); toast('Evidence check started. The browser will open after verification.'); await refresh(true); }
       catch(error) { toast(error.message,true); }
     };
     $('login-btn').onclick = async () => { try { await api('/api/login-ready',{}); await refresh(true); } catch(error) { toast(error.message,true); } };

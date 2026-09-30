@@ -26,6 +26,18 @@ def resolve_browser_channel(requested: str) -> str:
             return "chrome"
         if shutil.which("msedge") or any(path.is_file() for path in edge):
             return "msedge"
+    else:
+        for channel, names in (
+            ("chrome", ("google-chrome", "google-chrome-stable", "chrome")),
+            ("msedge", ("microsoft-edge", "microsoft-edge-stable", "msedge")),
+        ):
+            if any(shutil.which(name) for name in names):
+                return channel
+        if sys.platform == "darwin":
+            for channel, app in (("chrome", "Google Chrome"), ("msedge", "Microsoft Edge")):
+                if any((root / f"{app}.app/Contents/MacOS/{app}").is_file()
+                       for root in (Path("/Applications"), Path.home() / "Applications")):
+                    return channel
     return "chrome"
 
 
@@ -45,6 +57,12 @@ def browser_executable(channel: str) -> Path:
         relative = Path("Google/Chrome/Application" if resolved == "chrome" else "Microsoft/Edge/Application")
         for root in roots:
             path = root / relative / binary
+            if path.is_file():
+                return path
+    if sys.platform == "darwin":
+        app = "Google Chrome" if resolved == "chrome" else "Microsoft Edge"
+        for root in (Path("/Applications"), Path.home() / "Applications"):
+            path = root / f"{app}.app/Contents/MacOS/{app}"
             if path.is_file():
                 return path
     names = ("google-chrome", "google-chrome-stable", "chrome") if resolved == "chrome" else ("microsoft-edge", "microsoft-edge-stable", "msedge")

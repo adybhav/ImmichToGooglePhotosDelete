@@ -81,6 +81,12 @@ def test_explicit_browser_channel_is_preserved():
     assert resolve_browser_channel("msedge") == "msedge"
 
 
+def test_auto_browser_channel_finds_edge_on_linux(monkeypatch):
+    monkeypatch.setattr(trash.sys, "platform", "linux")
+    monkeypatch.setattr(trash.shutil, "which", lambda name: "/usr/bin/microsoft-edge" if name == "microsoft-edge" else None)
+    assert resolve_browser_channel("auto") == "msedge"
+
+
 def test_human_sign_in_opens_regular_browser_with_dedicated_profile(tmp_path: Path, monkeypatch):
     browser = tmp_path / "chrome.exe"
     calls = []
