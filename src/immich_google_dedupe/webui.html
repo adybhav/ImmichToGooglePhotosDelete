@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Immich · Google Photos review</title>
+  <style>
+    :root { color-scheme: light; --ink:#152d35; --muted:#64777d; --teal:#087c73; --teal-dark:#075a55; --mint:#e7f6f1; --line:#dce6e6; --paper:#fff; --bg:#f3f7f7; --red:#b44943; --red-bg:#fff0ec; --shadow:0 12px 35px rgba(25,63,69,.06); }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Segoe UI",Inter,system-ui,sans-serif; }
+    button,input,select { font:inherit; }
+    button { cursor:pointer; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    a { color:var(--teal-dark); }
+    .topbar { height:68px; background:#14353a; color:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 max(26px,calc((100vw - 1340px)/2)); }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:750; letter-spacing:.01em; }
+    .brand-mark { width:35px; height:35px; border-radius:11px; background:#d9f4e9; color:#0a665f; display:grid; place-items:center; font-size:21px; }
+    .local-pill { border:1px solid #4c7477; border-radius:30px; padding:5px 11px; font-size:12px; font-weight:700; color:#d3eeeb; letter-spacing:.06em; text-transform:uppercase; }
+    main { max-width:1340px; margin:auto; padding:34px 26px 76px; }
+    .hero { display:flex; justify-content:space-between; align-items:end; gap:24px; margin-bottom:28px; }
+    .eyebrow { color:var(--teal); text-transform:uppercase; letter-spacing:.17em; font-size:11px; font-weight:800; margin:0 0 8px; }
+    h1 { font-size:clamp(29px,3.4vw,42px); letter-spacing:-.04em; margin:0; line-height:1.12; }
+    .hero p:last-child { margin:10px 0 0; color:var(--muted); max-width:720px; }
+    .report-time { font-size:12px; color:var(--muted); white-space:nowrap; }
+    .dashboard { display:grid; grid-template-columns:minmax(300px,370px) minmax(0,1fr); gap:20px; align-items:start; }
+    .stack { display:grid; gap:20px; }
+    .panel { background:var(--paper); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }
+    .panel-head { padding:22px 24px 17px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:14px; align-items:center; }
+    .panel-head h2 { font-size:18px; letter-spacing:-.02em; margin:0; }
+    .panel-head .hint { color:var(--muted); font-size:12px; }
+    .step { display:inline-grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--mint); color:var(--teal-dark); font-size:12px; font-weight:800; margin-right:8px; }
+    .setup-body { padding:20px 24px 24px; display:grid; gap:14px; }
+    label.field { display:grid; gap:6px; font-size:12px; font-weight:700; color:#496168; }
+    label.field input { width:100%; height:41px; border:1px solid #cddcdd; background:#fbfdfd; border-radius:9px; padding:9px 11px; color:var(--ink); outline:0; font-weight:450; font-size:13px; }
+    label.field input:focus,.search input:focus,.confirm-input:focus { border-color:var(--teal); box-shadow:0 0 0 3px #cae9e3; }
+    .form-two { display:grid; grid-template-columns:1fr 90px; gap:10px; }
+    .microcopy { font-size:12px; color:var(--muted); margin:0; }
+    .primary,.outline,.danger,.quiet { border-radius:10px; border:1px solid transparent; min-height:42px; padding:9px 15px; font-weight:750; }
+    .primary { background:var(--teal); color:#fff; }
+    .primary:hover:not(:disabled) { background:var(--teal-dark); }
+    .outline { background:#fff; color:var(--teal-dark); border-color:#b8d6d1; }
+    .outline:hover:not(:disabled) { background:#eff9f6; }
+    .danger { background:var(--red); color:#fff; }
+    .danger:hover:not(:disabled) { background:#95372f; }
+    .quiet { background:#edf3f3; color:#36585c; }
+    .full { width:100%; }
+    .metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    .metric { padding:19px 19px 16px; min-height:102px; }
+    .metric span { display:block; color:var(--muted); font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.08em; }
+    .metric strong { display:block; margin-top:6px; font-size:28px; letter-spacing:-.04em; line-height:1.1; }
+    .metric.selected strong { color:var(--teal); }
+    .metric.done strong { color:#587c6a; }
+    .size-filter { margin:20px 24px 0; padding:15px 16px; border:1px solid #c7e3db; background:#f5fbf8; border-radius:12px; }
+    .size-filter-main { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .size-filter-label { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:750; }
+    .size-filter-label input { width:17px; height:17px; accent-color:var(--teal); }
+    .size-filter-controls { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; }
+    .size-filter-controls input { width:82px; height:38px; border:1px solid #cddcdd; border-radius:8px; padding:7px 9px; color:var(--ink); }
+    .size-filter-controls button { min-height:38px; }
+    .size-filter p { color:var(--muted); font-size:12px; margin:9px 0 0; }
+    .auth-row { margin:20px 24px 0; padding:14px 16px; border:1px solid #c7e3db; background:#f0faf6; border-radius:12px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .auth-row strong { display:block; font-size:13px; }
+    .auth-row p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+    .auth-row button { flex:none; }
+    .action-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:20px 24px 24px; }
+    .action-card { border:1px solid var(--line); border-radius:14px; padding:17px; display:flex; flex-direction:column; align-items:start; gap:8px; min-height:182px; }
+    .action-card.red { border-color:#f0d0c9; background:#fff9f7; }
+    .action-card h3 { margin:0; font-size:15px; }
+    .action-card p { margin:0; color:var(--muted); font-size:12px; flex:1; }
+    .action-card button { align-self:stretch; }
+    .status-panel { padding:18px 24px; }
+    .status-top { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .status-title { display:flex; align-items:center; gap:10px; font-weight:750; }
+    .status-dot { width:9px; height:9px; border-radius:50%; background:#9eb2b4; }
+    .status-dot.running { background:#25a790; box-shadow:0 0 0 5px #def4ee; animation:pulse 1.5s infinite; }
+    .status-dot.failed { background:var(--red); }
+    .status-dot.done { background:#2e9d73; }
+    @keyframes pulse { 50% { box-shadow:0 0 0 8px #def4ee80; } }
+    .progress-track { height:6px; margin:15px 0 0; border-radius:10px; background:#e9f0f0; overflow:hidden; }
+    .progress-fill { height:100%; width:0; border-radius:10px; background:#2aa997; transition:width .3s; }
+    .progress-fill.indeterminate { width:36%; animation:slide 1.6s ease-in-out infinite; }
+    @keyframes slide { from { transform:translateX(-110%); } to { transform:translateX(300%); } }
+    .login-gate { margin-top:15px; border-radius:11px; background:#edf8f4; border:1px solid #bde5d7; padding:13px; display:none; }
+    .login-gate strong { display:block; margin-bottom:5px; }
+    .login-gate p { font-size:12px; color:#52716e; margin:0 0 10px; }
+    .stop-row { display:flex; justify-content:flex-end; margin-top:12px; }
+    .console { background:#12272e; color:#d6ece8; border-radius:0 0 18px 18px; min-height:180px; max-height:250px; overflow:auto; padding:15px 20px; font:12px/1.65 Consolas,"Cascadia Code",monospace; }
+    .console-line { display:grid; grid-template-columns:65px 1fr; gap:9px; padding:2px 0; word-break:break-word; }
+    .console-time { color:#83a6a9; }
+    .console-line.error { color:#ffb6a6; }
+    .console-line.success { color:#b0edcf; }
+    .console-empty { color:#92aaad; }
+    .review { margin-top:23px; }
+    .review-head { padding:22px 24px; display:flex; justify-content:space-between; align-items:center; gap:20px; }
+    .review-head h2 { margin:0; font-size:20px; }
+    .review-head p { margin:5px 0 0; color:var(--muted); font-size:12px; }
+    .downloads { display:flex; gap:8px; white-space:nowrap; }
+    .downloads a { text-decoration:none; border:1px solid #c9dad9; border-radius:8px; padding:7px 10px; font-size:12px; font-weight:700; }
+    .review-tools { display:grid; grid-template-columns:1fr 170px; gap:10px; padding:0 24px 20px; }
+    .search input,.review-tools select { width:100%; height:39px; border:1px solid #cddcdd; border-radius:9px; background:#fff; padding:8px 11px; outline:0; color:var(--ink); }
+    .review-grid { display:grid; grid-template-columns:240px minmax(0,1fr); border-top:1px solid var(--line); min-height:300px; }
+    .folders { border-right:1px solid var(--line); padding:18px 14px 18px 18px; max-height:720px; overflow:auto; }
+    .folders-title { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.1em; font-weight:800; margin:0 0 12px 6px; }
+    .folder-row { display:flex; align-items:center; gap:8px; padding:7px 6px; border-radius:8px; }
+    .folder-row.active { background:#e9f5f1; }
+    .folder-row input { accent-color:var(--teal); width:16px; height:16px; cursor:pointer; flex:none; }
+    .folder-row button { border:0; background:none; text-align:left; color:var(--ink); font-size:12px; padding:0; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .folder-row small { color:var(--muted); font-size:11px; }
+    .folder-row.excluded button { color:#92a2a5; text-decoration:line-through; }
+    .cards-area { padding:20px; min-width:0; }
+    .results-line { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; margin-bottom:14px; }
+    .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .card { min-width:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; }
+    .thumb { height:150px; background:linear-gradient(135deg,#dce9e5,#eaf0f2); display:grid; place-items:center; position:relative; color:#6c8d91; font-size:30px; }
+    .thumb img { width:100%; height:100%; object-fit:cover; }
+    .thumb .badge { position:absolute; top:9px; left:9px; font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:4px 7px; border-radius:6px; background:#fff; color:#42666b; box-shadow:0 2px 9px #142b2b24; }
+    .thumb .badge.completed { background:#e4f6e9; color:#2a7850; }
+    .card-body { padding:11px; }
+    .card-name { font-size:12px; font-weight:750; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .card-path { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:3px 0 8px; }
+    .card-bottom { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .card-bottom label { display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; }
+    .card-bottom input { accent-color:var(--teal); width:15px; height:15px; }
+    .card-bottom a { font-size:11px; font-weight:700; white-space:nowrap; text-decoration:none; }
+    .empty { border:1px dashed #cbdcda; border-radius:12px; padding:36px 18px; color:var(--muted); text-align:center; grid-column:1/-1; }
+    .pager { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-top:17px; font-size:12px; color:var(--muted); }
+    .pager button { border:1px solid #cddcdd; background:#fff; border-radius:8px; padding:5px 11px; color:var(--ink); }
+    dialog { border:0; border-radius:18px; width:min(440px,calc(100vw - 30px)); padding:0; color:var(--ink); box-shadow:0 24px 80px #0e2b3560; }
+    dialog::backdrop { background:#0a2229a8; }
+    .modal-inner { padding:27px; }
+    .modal-inner .eyebrow { color:var(--red); }
+    .modal-inner h2 { margin:0 0 10px; font-size:24px; letter-spacing:-.03em; }
+    .modal-inner p { color:var(--muted); font-size:13px; }
+    .phrase { display:block; background:#f3f6f6; border:1px dashed #bfcfcf; border-radius:9px; padding:10px; font:12px/1.5 Consolas,monospace; user-select:all; margin:15px 0; }
+    .confirm-input { width:100%; border:1px solid #cddcdd; border-radius:9px; padding:11px; outline:0; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:20px; }
+    .toast { position:fixed; right:20px; bottom:20px; background:#153940; color:#fff; border-radius:11px; padding:11px 15px; box-shadow:0 12px 34px #193d4450; opacity:0; transform:translateY(10px); pointer-events:none; transition:.2s; max-width:420px; z-index:5; }
+    .toast.show { opacity:1; transform:translateY(0); }
+    .toast.error { background:#963f37; }
+    @media(max-width:1050px) { .dashboard { grid-template-columns:1fr; } .metrics { grid-template-columns:repeat(4,1fr); } }
+    @media(max-width:760px) { main { padding:23px 14px 60px; } .topbar { padding:0 16px; } .hero { display:block; } .report-time { margin-top:12px; } .metrics { grid-template-columns:repeat(2,1fr); } .review-grid { grid-template-columns:1fr; } .folders { border-right:0; border-bottom:1px solid var(--line); max-height:200px; } .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .review-head { display:block; } .downloads { margin-top:12px; } .auth-row,.size-filter-main { display:block; } .auth-row button,.size-filter-controls { margin-top:12px; } }
+    @media(max-width:480px) { .cards,.action-row { grid-template-columns:1fr; } .review-tools { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><div class="brand-mark">✦</div> Immich / Google Photos</div><div class="local-pill">Local review workspace</div></header>
+  <main>
+    <div class="hero"><div><p class="eyebrow">Duplicate review</p><h1>Review before you remove.</h1><p>Compare your Takeout with Immich, keep the albums and photos you want in both places, then move only selected exact matches to Google Photos trash.</p></div><div class="report-time" id="report-time">No report loaded yet</div></div>
+    <div class="dashboard">
+      <section class="panel">
+        <div class="panel-head"><h2><span class="step">1</span>Build report</h2><span class="hint">Read-only scan</span></div>
+        <div class="setup-body">
+          <label class="field">Extracted Google Photos Takeout folder<input id="takeout" spellcheck="false"></label>
+          <label class="field">Immich URL<input id="immich-url" spellcheck="false"></label>
+          <label class="field">Docker path mapping<input id="path-map" spellcheck="false"></label>
+          <label class="field">Report JSON path<input id="output" spellcheck="false"></label>
+          <div class="form-two"><label class="field">Immich API key<input id="api-key" type="password" placeholder="Enter for each scan" autocomplete="off"></label><label class="field">Workers<input id="workers" type="number" min="1" max="32"></label></div>
+          <p class="microcopy">Your API key stays in this running app process and is not saved in the report or browser storage. Scanning never changes photos.</p>
+          <button id="scan-btn" class="primary full">Build duplication report</button>
+        </div>
+      </section>
+      <div class="stack">
+        <div class="metrics">
+          <div class="metric panel"><span>Google items</span><strong id="metric-google">—</strong></div>
+          <div class="metric panel"><span>Exact matches</span><strong id="metric-exact">—</strong></div>
+          <div class="metric panel selected"><span>Selected to trash</span><strong id="metric-selected">—</strong></div>
+          <div class="metric panel done"><span>Already moved</span><strong id="metric-completed">—</strong></div>
+        </div>
+        <section class="panel"><div class="panel-head"><h2><span class="step">2</span>Move selected matches</h2><span class="hint">Google Photos trash · recoverable</span></div><div class="size-filter"><div class="size-filter-main"><label class="size-filter-label"><input id="size-filter-enabled" type="checkbox" checked> Keep photos and videos at or below</label><div class="size-filter-controls"><input id="size-filter-mib" type="number" min="0" max="100000" step="0.1" value="2" aria-label="Minimum media size in MiB"><span>MiB</span><button id="size-filter-apply" class="outline">Apply</button></div></div><p id="size-filter-status">Uses Takeout file sizes already saved in the report.</p></div><div class="auth-row"><div><strong>First, sign in with regular Chrome</strong><p>Verify your Google account, then close the entire sign-in Chrome window before the test run. Closing only a tab may leave its profile in use.</p></div><button id="auth-btn" class="outline">Open sign-in browser</button></div><div class="action-row"><div class="action-card"><h3>Test one item</h3><p>Open Chrome, verify the already signed-in Google account, and move the first selected exact match.</p><button id="test-btn" class="outline" disabled>Test 1 selected item</button></div><div class="action-card red"><h3>Move the remaining selection</h3><p>Uses your album and photo choices. Items already recorded as moved are skipped.</p><button id="all-btn" class="danger" disabled>Move selected to trash</button></div></div></section>
+        <section class="panel"><div class="status-panel"><div class="status-top"><div class="status-title"><span class="status-dot" id="status-dot"></span><span id="status-text">Ready to build a report</span></div><span class="hint" id="status-detail"></span></div><div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div><div class="login-gate" id="login-gate"><strong>Check the Google account in Chrome</strong><p>Verify the account is already signed in. If Google asks for sign-in, stop this run and use the separate sign-in browser button first.</p><button id="login-btn" class="primary">I verified the account · Continue</button></div><div class="stop-row"><button id="stop-btn" class="quiet" style="display:none">Stop after current item</button></div></div><div class="console" id="console"><div class="console-empty">Progress and results will appear here.</div></div></section>
+      </div>
+    </div>
+    <section class="panel review" id="review"><div class="review-head"><div><p class="eyebrow" style="margin:0 0 5px">Review queue</p><h2>Choose what stays in both places</h2><p>Uncheck a Takeout folder or an individual photo. A photo in multiple folders is excluded if any one of those folders is unchecked.</p></div><div class="downloads" id="downloads" style="display:none"><a id="csv-link">Download CSV</a><a id="json-link">Download JSON</a></div></div><div class="review-tools"><div class="search"><input id="query" placeholder="Search filenames or paths" aria-label="Search candidates"></div><select id="view" aria-label="Review filter"><option value="all">All exact matches</option><option value="selected">Selected</option><option value="excluded">Kept in both places</option><option value="completed">Already moved</option></select></div><div class="review-grid"><aside class="folders" id="folders"><div class="folders-title">Takeout folders / albums</div><div class="microcopy" style="padding:0 6px">Build a report to see folders.</div></aside><div class="cards-area"><div class="results-line"><span id="results-count">No candidates loaded</span><span id="folder-filter"></span></div><div class="cards" id="cards"><div class="empty">Your exact matches will appear here after the scan.</div></div><div class="pager"><button id="prev-btn" disabled>Previous</button><span id="page-label">—</span><button id="next-btn" disabled>Next</button></div></div></div></section>
+  </main>
+  <dialog id="confirm-dialog"><div class="modal-inner"><p class="eyebrow">Confirm Google Photos trash</p><h2 id="modal-title">Move selected items?</h2><p id="modal-copy"></p><span class="phrase" id="modal-phrase"></span><input class="confirm-input" id="confirm-input" placeholder="Type the phrase exactly" autocomplete="off"><div class="modal-actions"><button id="modal-cancel" class="quiet">Cancel</button><button id="modal-submit" class="danger">Open Chrome and continue</button></div></div></dialog>
+  <div id="toast" class="toast" role="status"></div>
+  <script>
+    const TOKEN = __APP_TOKEN_JSON__;
+    const $ = id => document.getElementById(id);
+    let currentState = null, lastEvent = 0, lastRevision = -1, offset = 0, folderFilter = '', modalScope = '', modalPhrase = '', toastTimer;
+    let progressRatio = null, jobStarted = '';
+    let configLoaded = false, filterLoaded = false, refreshing = false, searchTimer;
+    const formatNumber = value => Number(value || 0).toLocaleString();
+    const formatSize = value => value >= 1024 ** 3 ? (value / 1024 ** 3).toFixed(2) + ' GiB' : value >= 1024 ** 2 ? (value / 1024 ** 2).toFixed(1) + ' MiB' : Math.round(value / 1024) + ' KiB';
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    async function api(path, body) {
+      const options = {headers:{'X-Session-Token':TOKEN}};
+      if (body !== undefined) { options.method = 'POST'; options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
+      const response = await fetch(path, options);
+      let data;
+      try { data = await response.json(); } catch { throw new Error('The local UI did not return JSON.'); }
+      if (!response.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
+    function toast(message, error = false) {
+      const element = $('toast'); element.textContent = message; element.className = 'toast show' + (error ? ' error' : '');
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => element.className = 'toast', 4500);
+    }
+    function setConfig(config) {
+      $('takeout').value = config.takeout; $('immich-url').value = config.immich_url;
+      $('path-map').value = (config.path_map || [])[0] || ''; $('output').value = config.output;
+      $('workers').value = config.workers; configLoaded = true;
+    }
+    function appendEvents(events) {
+      const consoleBox = $('console');
+      if (events.length && consoleBox.querySelector('.console-empty')) consoleBox.innerHTML = '';
+      const nearBottom = consoleBox.scrollTop + consoleBox.clientHeight >= consoleBox.scrollHeight - 35;
+      for (const event of events) {
+        const line = document.createElement('div'); line.className = 'console-line ' + event.level;
+        const time = document.createElement('span'); time.className = 'console-time'; time.textContent = event.time;
+        const message = document.createElement('span'); message.textContent = event.message;
+        line.append(time, message); consoleBox.append(line);
+      }
+      while (consoleBox.children.length > 250) consoleBox.firstChild.remove();
+      if (nearBottom) consoleBox.scrollTop = consoleBox.scrollHeight;
+    }
+    function renderFolders(folders, busy) {
+      const container = $('folders'); container.innerHTML = '<div class="folders-title">Takeout folders / albums</div>';
+      if (!folders.length) { const p = document.createElement('p'); p.className = 'microcopy'; p.textContent = 'Build a report to see folders.'; container.append(p); return; }
+      const all = document.createElement('div'); all.className = 'folder-row' + (!folderFilter ? ' active' : '');
+      const allButton = document.createElement('button'); allButton.textContent = 'All folders'; allButton.onclick = () => { folderFilter = ''; offset = 0; renderFolders(folders, busy); loadCandidates(); };
+      all.append(allButton); container.append(all);
+      for (const folder of folders) {
+        const row = document.createElement('div'); row.className = 'folder-row' + (folder.name === folderFilter ? ' active' : '') + (folder.excluded ? ' excluded' : '');
+        const include = document.createElement('input'); include.type = 'checkbox'; include.checked = !folder.excluded; include.disabled = busy;
+        include.title = folder.excluded ? 'Include this folder' : 'Keep this folder in Google Photos';
+        include.onchange = async () => { try { await api('/api/selection', {type:'folder',name:folder.name,excluded:!include.checked}); await refresh(true); } catch(error) { toast(error.message,true); include.checked = !include.checked; } };
+        const button = document.createElement('button'); button.textContent = folder.name; button.title = folder.name;
+        button.onclick = () => { folderFilter = folder.name; offset = 0; renderFolders(folders, busy); loadCandidates(); };
+        const count = document.createElement('small'); count.textContent = formatNumber(folder.count);
+        row.append(include,button,count); container.append(row);
+      }
+    }
+    function renderState(state) {
+      currentState = state;
+      if (!configLoaded) setConfig(state.config);
+      const report = state.report, counts = state.counts, job = state.job, busy = job.status === 'running';
+      if (!filterLoaded && state.size_filter) {
+        $('size-filter-enabled').checked = state.size_filter.enabled;
+        $('size-filter-mib').value = state.size_filter.minimum_mib;
+        filterLoaded = true;
+      }
+      $('metric-google').textContent = report.exists ? formatNumber(report.summary.google_items) : '—';
+      $('metric-exact').textContent = report.exists ? formatNumber(report.summary.exact_hash_matches) : '—';
+      $('metric-selected').textContent = report.exists ? formatNumber(counts.selected) : '—';
+      $('metric-completed').textContent = report.exists ? formatNumber(counts.completed) : '—';
+      $('report-time').textContent = report.exists ? 'Report · ' + new Date(report.generated_at).toLocaleString() : 'No report loaded yet';
+      $('scan-btn').disabled = busy; $('scan-btn').textContent = busy && job.kind === 'scan' ? 'Scanning…' : 'Build duplication report';
+      $('auth-btn').disabled = busy;
+      $('size-filter-enabled').disabled = busy || !report.exists;
+      $('size-filter-mib').disabled = busy || !report.exists;
+      $('size-filter-apply').disabled = busy || !report.exists;
+      $('size-filter-status').textContent = state.size_filter.enabled
+        ? `${formatNumber(counts.kept_by_size)} otherwise selected photos and videos are kept by this size rule. Uses saved Takeout file sizes.`
+        : 'Size rule is off. It uses saved Takeout file sizes when enabled.';
+      $('test-btn').disabled = busy || !report.exists || counts.selected < 1;
+      $('all-btn').disabled = busy || !report.exists || counts.selected < 1;
+      $('all-btn').textContent = counts.selected ? `Move ${formatNumber(counts.selected)} selected to trash` : 'Move selected to trash';
+      $('status-dot').className = 'status-dot ' + (busy ? 'running' : job.status === 'done' ? 'done' : job.status === 'failed' ? 'failed' : '');
+      $('status-text').textContent = busy ? (job.kind === 'scan' ? 'Building duplication report' : 'Moving selected items to trash') : job.status === 'done' ? 'Last job completed' : job.status === 'failed' ? 'Last job failed' : job.status === 'cancelled' ? 'Last job stopped' : report.exists ? 'Ready for review' : 'Ready to build a report';
+      $('status-detail').textContent = busy && job.kind === 'trash' ? formatNumber(job.planned) + ' planned' : report.exists ? formatNumber(counts.selected) + ' selected' : '';
+      $('login-gate').style.display = busy && job.waiting_login ? 'block' : 'none';
+      $('stop-btn').style.display = busy ? 'inline-block' : 'none';
+      $('stop-btn').textContent = job.kind === 'scan' ? 'Stop scan' : 'Stop after current item';
+      $('downloads').style.display = report.exists ? 'flex' : 'none';
+      $('csv-link').href = '/api/download?kind=csv&token=' + encodeURIComponent(TOKEN);
+      $('json-link').href = '/api/download?kind=json&token=' + encodeURIComponent(TOKEN);
+      const fill = $('progress-fill');
+      if (job.started_at !== jobStarted) { jobStarted = job.started_at; progressRatio = null; }
+      if (!busy) { fill.className = 'progress-fill'; fill.style.width = job.status === 'done' ? '100%' : '0'; }
+      else {
+        const browserPhase = state.events.some(event => /Automated browser is open|Trashing \d+\//.test(event.message));
+        if (browserPhase) progressRatio = null;
+        const latest = browserPhase ? null : [...state.events].reverse().find(event => /(?:Hashed|Verified) Google Takeout media (\d+)\/(\d+)|Verified Takeout evidence (\d+)\/(\d+)/.test(event.message));
+        const match = latest && latest.message.match(/(\d+)\/(\d+)/);
+        if (match) progressRatio = Math.min(100, Number(match[1]) / Number(match[2]) * 100);
+        if (progressRatio !== null) { fill.className = 'progress-fill'; fill.style.width = progressRatio + '%'; }
+        else { fill.className = 'progress-fill indeterminate'; fill.style.width = ''; }
+      }
+      if (report.revision !== lastRevision) {
+        lastRevision = report.revision; renderFolders(state.folders, busy); loadCandidates();
+      }
+    }
+    async function loadCandidates() {
+      if (!currentState || !currentState.report.exists) return;
+      const params = new URLSearchParams({offset,limit:24,query:$('query').value,folder:folderFilter,view:$('view').value});
+      try {
+        const page = await api('/api/candidates?' + params);
+        $('results-count').textContent = formatNumber(page.total) + ' matching candidates';
+        $('folder-filter').textContent = folderFilter || '';
+        const cards = $('cards'); cards.innerHTML = '';
+        if (!page.items.length) { cards.innerHTML = '<div class="empty">No candidates match this view.</div>'; }
+        for (const item of page.items) {
+          const card = document.createElement('article'); card.className = 'card';
+          const thumb = item.preview ? `<img loading="lazy" src="/api/preview/${item.id}?token=${encodeURIComponent(TOKEN)}" alt="">` : `<span>${item.media_type === 'video' ? '▶' : '◇'}</span>`;
+          const badge = item.completed ? 'Moved' : item.album_excluded ? 'Folder excluded' : item.size_excluded ? 'Below size limit' : item.selected ? 'Exact match' : 'Kept';
+          const checked = item.selected ? 'checked' : '';
+          const disabled = item.completed || item.album_excluded || item.size_excluded || currentState.job.status === 'running' ? 'disabled' : '';
+          card.innerHTML = `<div class="thumb">${thumb}<span class="badge ${item.completed ? 'completed' : ''}">${badge}</span></div><div class="card-body"><div class="card-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div><div class="card-path" title="${escapeHtml(item.relative_path)}">${escapeHtml(item.relative_path)} · ${formatSize(item.size)}</div><div class="card-bottom"><label><input type="checkbox" ${checked} ${disabled}> Select</label><a target="_blank" rel="noopener noreferrer">Google Photos ↗</a></div></div>`;
+          card.querySelector('a').href = item.google_url;
+          card.querySelector('input').onchange = async event => { try { await api('/api/selection',{type:'candidate',id:item.id,selected:event.target.checked}); await refresh(true); } catch(error) { toast(error.message,true); event.target.checked = !event.target.checked; } };
+          cards.append(card);
+        }
+        $('prev-btn').disabled = offset === 0; $('next-btn').disabled = offset + page.limit >= page.total;
+        $('page-label').textContent = page.total ? `${offset + 1}–${Math.min(offset + page.limit,page.total)} of ${formatNumber(page.total)}` : '0 of 0';
+      } catch(error) { toast(error.message,true); }
+    }
+    async function refresh(force = false) {
+      if (refreshing && !force) return;
+      refreshing = true;
+      try {
+        const state = await api('/api/state?after=' + lastEvent);
+        appendEvents(state.events); lastEvent = state.last_event_id; renderState(state);
+      } catch(error) { toast(error.message,true); }
+      finally { refreshing = false; }
+    }
+    $('scan-btn').onclick = async () => {
+      const payload = {takeout:$('takeout').value,immich_url:$('immich-url').value,path_map:$('path-map').value,output:$('output').value,workers:$('workers').value,api_key:$('api-key').value};
+      try { await api('/api/scan',payload); $('api-key').value = ''; toast('Scan started. Progress will appear below.'); await refresh(true); }
+      catch(error) { toast(error.message,true); }
+    };
+    $('auth-btn').onclick = async () => {
+      try { await api('/api/open-sign-in',{}); toast('Sign in with regular Chrome/Edge, then close the entire sign-in window before testing one item.'); await refresh(true); }
+      catch(error) { toast(error.message,true); }
+    };
+    $('size-filter-apply').onclick = async () => {
+      const minimum = Number($('size-filter-mib').value);
+      if ($('size-filter-mib').value.trim() === '' || !Number.isFinite(minimum) || minimum < 0 || minimum > 100000) {
+        toast('Enter a media size from 0 to 100,000 MiB.', true); return;
+      }
+      try {
+        await api('/api/selection',{type:'size_filter',enabled:$('size-filter-enabled').checked,minimum_mib:minimum});
+        toast('Media size rule saved. The selection count has been updated.');
+        await refresh(true);
+      } catch(error) { toast(error.message,true); }
+    };
+    function openConfirm(scope) {
+      if (!currentState) return;
+      const count = scope === 'one' ? 1 : currentState.counts.selected;
+      if (!count) return;
+      modalScope = scope; modalPhrase = `TRASH ${count} GOOGLE PHOTOS ITEMS`;
+      $('modal-title').textContent = scope === 'one' ? 'Test one selected item' : `Move ${formatNumber(count)} selected items?`;
+      $('modal-copy').textContent = 'Only exact hash matches with Google Photos URLs are included. Sign in first using the separate button and close that window. The trash run will open Chrome for account verification before moving anything.';
+      $('modal-phrase').textContent = modalPhrase; $('confirm-input').value = '';
+      $('confirm-dialog').showModal(); $('confirm-input').focus();
+    }
+    $('test-btn').onclick = () => openConfirm('one'); $('all-btn').onclick = () => openConfirm('all');
+    $('modal-cancel').onclick = () => $('confirm-dialog').close();
+    $('modal-submit').onclick = async () => {
+      try { await api('/api/trash',{scope:modalScope,confirmation:$('confirm-input').value}); $('confirm-dialog').close(); toast('Evidence check started. Chrome will open after verification.'); await refresh(true); }
+      catch(error) { toast(error.message,true); }
+    };
+    $('login-btn').onclick = async () => { try { await api('/api/login-ready',{}); await refresh(true); } catch(error) { toast(error.message,true); } };
+    $('stop-btn').onclick = async () => { try { await api('/api/stop',{}); toast('Stop requested. The current item may finish.'); } catch(error) { toast(error.message,true); } };
+    $('query').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { offset = 0; loadCandidates(); },250); };
+    $('view').onchange = () => { offset = 0; loadCandidates(); };
+    $('prev-btn').onclick = () => { offset = Math.max(0,offset - 24); loadCandidates(); };
+    $('next-btn').onclick = () => { offset += 24; loadCandidates(); };
+    refresh(); setInterval(refresh,1200);
+  </script>
+</body>
+</html>

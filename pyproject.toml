@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "immich-google-dedupe"
+version = "0.1.0"
+description = "Audit Google Photos Takeout media against an Immich user and safely trash proven duplicates"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Immich Google Photos Dedupe contributors" }]
+dependencies = [
+  "requests>=2.31,<3",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.48,<2"]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+immich-gphotos-dedupe = "immich_google_dedupe.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/immich_google_dedupe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

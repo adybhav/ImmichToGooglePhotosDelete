@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.gphotos-browser-profile/
+reports/
+/reports - Copy/
+/takeout-*.zip
+/ui-preview.png
+*.log
