@@ -16,6 +16,7 @@
     .brand { display:flex; align-items:center; gap:12px; font-weight:750; letter-spacing:.01em; }
     .brand-mark { width:35px; height:35px; border-radius:11px; background:#d9f4e9; color:#0a665f; display:grid; place-items:center; font-size:21px; }
     .local-pill { border:1px solid #4c7477; border-radius:30px; padding:5px 11px; font-size:12px; font-weight:700; color:#d3eeeb; letter-spacing:.06em; text-transform:uppercase; }
+    .local-pill select { margin-left:6px; color:#14353a; background:#e8f7f3; border:0; border-radius:12px; padding:4px 8px; font:700 12px system-ui; text-transform:none; letter-spacing:0; }
     main { max-width:1340px; margin:auto; padding:34px 26px 76px; }
     .hero { display:flex; justify-content:space-between; align-items:end; gap:24px; margin-bottom:28px; }
     .eyebrow { color:var(--teal); text-transform:uppercase; letter-spacing:.17em; font-size:11px; font-weight:800; margin:0 0 8px; }
@@ -155,7 +156,7 @@
   </style>
 </head>
 <body>
-  <header class="topbar"><div class="brand"><div class="brand-mark">✦</div> Immich / Google Photos</div><div class="local-pill">Local review workspace</div></header>
+  <header class="topbar"><div class="brand"><div class="brand-mark">✦</div> Immich / Google Photos</div><label class="local-pill">Google account <select id="account-select" aria-label="Google account workspace"></select></label></header>
   <main>
     <div class="hero"><div><p class="eyebrow">Duplicate review</p><h1>Review before you remove.</h1><p>Compare your Takeout with Immich, keep the albums and photos you want in both places, then move only selected exact matches to Google Photos trash.</p></div><div class="report-time" id="report-time">No report loaded yet</div></div>
     <div class="dashboard">
@@ -195,6 +196,7 @@
     let currentState = null, lastEvent = 0, lastRevision = -1, offset = 0, folderFilter = '', modalScope = '', modalPhrase = '', toastTimer;
     let progressRatio = null, jobStarted = '';
     let configLoaded = false, filterLoaded = false, refreshing = false, searchTimer;
+    let accountsLoaded = false;
     const formatNumber = value => Number(value || 0).toLocaleString();
     const formatSize = value => value >= 1024 ** 3 ? (value / 1024 ** 3).toFixed(2) + ' GiB' : value >= 1024 ** 2 ? (value / 1024 ** 2).toFixed(1) + ' MiB' : Math.round(value / 1024) + ' KiB';
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -304,6 +306,15 @@
     }
     function renderState(state) {
       currentState = state;
+      if (!accountsLoaded) {
+        const selector = $('account-select');
+        for (const name of state.accounts) {
+          const option = document.createElement('option'); option.value = name; option.textContent = name;
+          selector.append(option);
+        }
+        selector.value = state.account;
+        accountsLoaded = true;
+      }
       if (!configLoaded) setConfig(state.config);
       const report = state.report, counts = state.counts, job = state.job, busy = job.status === 'running';
       if (!filterLoaded && state.size_filter) {
@@ -455,6 +466,10 @@
           currentState.job.status === 'running', scanned);
       }
       loadCandidates();
+    };
+    $('account-select').onchange = async () => {
+      try { await api('/api/account/select', {account:$('account-select').value}); location.reload(); }
+      catch(error) { toast(error.message,true); $('account-select').value = currentState.account; }
     };
     $('prev-btn').onclick = () => { offset = Math.max(0,offset - 24); loadCandidates(); };
     $('next-btn').onclick = () => { offset += 24; loadCandidates(); };

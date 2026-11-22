@@ -98,6 +98,7 @@ class LocalApp:
     def __init__(self, args: argparse.Namespace):
         self.lock = threading.RLock()
         self.settings_path = Path(getattr(args, "settings_path", None) or Path.cwd() / ".immich-gphotos-settings.json")
+        self.workspace = self.settings_path.parent
         saved: dict[str, Any] = {}
         if self.settings_path.is_file():
             try:
@@ -579,7 +580,7 @@ class LocalApp:
                 result_path = report_path.with_name(f"trash-run-{uuid.uuid4().hex}.json")
                 result = trash_candidates(
                     verified,
-                    profile_dir=Path.cwd() / ".gphotos-browser-profile",
+                    profile_dir=self.workspace / ".gphotos-browser-profile",
                     result_path=result_path,
                     button_pattern=r"^(Move to trash|Trash)$",
                     confirm_pattern=r"^(Move to trash|Trash)$",
@@ -625,7 +626,7 @@ class LocalApp:
             if self.auth_process is not None and self.auth_process.poll() is None:
                 raise WebError("The sign-in browser is already open", 409)
             browser_channel = str(self.config["browser_channel"])
-            profile_dir = Path.cwd() / ".gphotos-browser-profile"
+            profile_dir = self.workspace / ".gphotos-browser-profile"
             self.auth_process = open_sign_in_browser(profile_dir, browser_channel)
         self.log(
             "Regular Chrome/Edge opened with the dedicated profile. Sign in, verify the account, "
@@ -649,8 +650,11 @@ class LocalApp:
 def make_handler(
     app: LocalApp, token: str, *, listen_host: str = "127.0.0.1",
     require_access_link: bool = False, access_code: str | None = None,
+    account_apps: dict[str, LocalApp] | None = None,
 ):
     lan_code = access_code or token
+    apps = account_apps or {"default": app}
+    default_account = next(iter(apps))
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ImmichDedupeLocalUI/1"
@@ -684,6 +688,14 @@ def make_handler(
                 return saved is not None and secrets.compare_digest(saved.value, token)
             except CookieError:
                 return False
+
+        def _account(self) -> str:
+            try:
+                cookies = SimpleCookie(self.headers.get("Cookie", ""))
+                selected = cookies.get("gphotos_account")
+                return selected.value if selected and selected.value in apps else default_account
+            except CookieError:
+                return default_account
 
         def _grant_access(self) -> None:
             self.send_response(HTTPStatus.SEE_OTHER)
@@ -760,8 +772,13 @@ def make_handler(
                 self._json({"error": "Unauthorized local request"}, 403)
                 return
             try:
+                account = self._account()
+                app = apps[account]
                 if parsed.path == "/api/state":
-                    self._json(app.state(after=int(query.get("after", ["0"])[0])))
+                    state = app.state(after=int(query.get("after", ["0"])[0]))
+                    state["account"] = account
+                    state["accounts"] = list(apps)
+                    self._json(state)
                 elif parsed.path == "/api/setup/docker":
                     self._json(app.discover_docker())
                 elif parsed.path == "/api/candidates":
@@ -829,6 +846,20 @@ def make_handler(
                 if not isinstance(payload, dict):
                     raise WebError("Expected a JSON object")
                 path = urlsplit(self.path).path
+                if path == "/api/account/select":
+                    selected = payload.get("account")
+                    if selected not in apps:
+                        raise WebError("Unknown Google account workspace")
+                    response = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(response)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Set-Cookie", f"gphotos_account={selected}; HttpOnly; SameSite=Strict; Path=/")
+                    self.end_headers()
+                    self.wfile.write(response)
+                    return
+                app = apps[self._account()]
                 if path == "/api/scan":
                     app.start_scan(payload)
                 elif path == "/api/setup/save":
@@ -864,13 +895,28 @@ def launch_web_ui(args: argparse.Namespace) -> int:
         raise ValueError("--host must be a local IPv4 address") from exc
     if not (host.is_loopback or host.is_private) or host.is_unspecified:
         raise ValueError("--host must be a loopback or private LAN IPv4 address")
-    app = LocalApp(args)
+    accounts = getattr(args, "account", []) or []
+    apps: dict[str, LocalApp] = {}
+    for definition in accounts:
+        name, separator, workspace = definition.partition("=")
+        if not separator or not name.isidentifier() or not workspace or name in apps:
+            raise ValueError("--account must be a unique NAME=WORKSPACE")
+        folder = Path(workspace).expanduser().resolve()
+        if not (folder / ".immich-gphotos-settings.json").is_file():
+            raise ValueError(f"Account workspace has no saved settings: {folder}")
+        account_args = argparse.Namespace(**vars(args))
+        account_args.settings_path = folder / ".immich-gphotos-settings.json"
+        apps[name] = LocalApp(account_args)
+    if not apps:
+        apps["default"] = LocalApp(args)
+    app = next(iter(apps.values()))
     token = secrets.token_urlsafe(32)
     lan_mode = not host.is_loopback
     access_code = secrets.token_urlsafe(18) if lan_mode else None
     server = ThreadingHTTPServer(
         (str(host), args.port),
-        make_handler(app, token, listen_host=str(host), require_access_link=lan_mode, access_code=access_code),
+        make_handler(app, token, listen_host=str(host), require_access_link=lan_mode,
+                     access_code=access_code, account_apps=apps),
     )
     server.daemon_threads = True
     url = f"http://{host}:{server.server_port}/"
@@ -886,11 +932,12 @@ def launch_web_ui(args: argparse.Namespace) -> int:
     try:
         server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:
-        app.stop_event.set()
-        app.login_event.set()
-        if app.job_thread and app.job_thread.is_alive() and app.job.get("kind") == "trash":
-            print("Waiting for the current browser action to finish...", flush=True)
-            app.job_thread.join(timeout=90)
+        for account_app in apps.values():
+            account_app.stop_event.set()
+            account_app.login_event.set()
+            if account_app.job_thread and account_app.job_thread.is_alive() and account_app.job.get("kind") == "trash":
+                print("Waiting for the current browser action to finish...", flush=True)
+                account_app.job_thread.join(timeout=90)
     finally:
         server.server_close()
     return 0

@@ -55,6 +55,46 @@ def test_lan_page_requires_access_code_cookie_and_api_token(tmp_path: Path):
         worker.join(timeout=2)
 
 
+def test_one_ui_switches_between_isolated_account_workspaces(tmp_path: Path):
+    apps = {}
+    for name in ("july20", "july21"):
+        workspace = tmp_path / name
+        workspace.mkdir()
+        args = argparse.Namespace(
+            takeout="", immich_url="http://localhost:2283", path_map=[],
+            output=str(workspace / "reports" / "duplication-report.json"),
+            workers=4, browser_channel="auto",
+            settings_path=workspace / ".immich-gphotos-settings.json",
+        )
+        apps[name] = LocalApp(args)
+        assert apps[name].workspace == workspace
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(apps["july20"], "private-token", account_apps=apps),
+    )
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    browser = build_opener(HTTPCookieProcessor(CookieJar()))
+    headers = {"X-Session-Token": "private-token"}
+    try:
+        first = json.load(browser.open(Request(base + "/api/state", headers=headers)))
+        assert first["account"] == "july20"
+        assert first["accounts"] == ["july20", "july21"]
+        assert "july20" in first["report"]["path"]
+        browser.open(Request(
+            base + "/api/account/select", data=json.dumps({"account": "july21"}).encode(),
+            headers={**headers, "Content-Type": "application/json"},
+        ))
+        second = json.load(browser.open(Request(base + "/api/state", headers=headers)))
+        assert second["account"] == "july21"
+        assert "july21" in second["report"]["path"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+
+
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "example.com"])
 def test_web_ui_rejects_nonlocal_bind_addresses(host: str):
     with pytest.raises(ValueError, match="--host"):

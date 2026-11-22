@@ -225,6 +225,8 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=8765, help="Web UI port (default: 8765)")
     web.add_argument("--host", default="127.0.0.1",
                      help="IPv4 address to listen on; use this PC's private LAN IP to share the UI")
+    web.add_argument("--account", action="append", default=[], metavar="NAME=WORKSPACE",
+                     help="Add a separate Google account workspace to one UI; repeat for each account")
     web.add_argument("--no-open", action="store_true", help="Print the URL without opening a browser")
     web.set_defaults(func=run_web)
 
