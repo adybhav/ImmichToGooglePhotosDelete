@@ -49,6 +49,15 @@ def test_scan_takeout_includes_raw_files(tmp_path: Path):
     assert stats["exported_media_files"] == 2
 
 
+def test_scan_takeout_includes_google_truncated_mp4_files(tmp_path: Path):
+    (tmp_path / "movie.MP").write_bytes(b"mp4 contents")
+    (tmp_path / "movie.MP~2").write_bytes(b"second mp4 contents")
+    items, stats = scan_takeout(tmp_path, workers=2)
+    assert [item.filename for item in items] == ["movie.MP", "movie.MP~2"]
+    assert all(item.media_type == "video" for item in items)
+    assert stats["exported_media_files"] == 2
+
+
 @pytest.mark.parametrize("workers", [1, 4])
 def test_scan_takeout_collapses_repeated_cloud_url(tmp_path: Path, workers: int):
     for album_name in ("Album A", "Album B"):

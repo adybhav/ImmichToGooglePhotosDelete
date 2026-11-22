@@ -1,12 +1,64 @@
 import argparse
 import hashlib
 import json
+import threading
+from http.cookiejar import CookieJar
 from pathlib import Path
 from types import SimpleNamespace
+from http.server import ThreadingHTTPServer
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 import pytest
 
-from immich_google_dedupe.webui import LocalApp, WebError, candidate_id
+from immich_google_dedupe.webui import LocalApp, WebError, candidate_id, launch_web_ui, make_handler
+
+
+def test_lan_page_requires_access_code_cookie_and_api_token(tmp_path: Path):
+    args = argparse.Namespace(
+        takeout="", immich_url="http://localhost:2283", path_map=[],
+        output=str(tmp_path / "missing-report.json"), workers=4, browser_channel="auto",
+        settings_path=tmp_path / "settings.json",
+    )
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(LocalApp(args), "private-token", require_access_link=True,
+                     access_code="entry-code"),
+    )
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        browser = build_opener(HTTPCookieProcessor(CookieJar()))
+        login = browser.open(base + "/")
+        assert login.status == 200
+        assert b"Local review access" in login.read()
+        with pytest.raises(HTTPError) as denied:
+            browser.open(Request(base + "/?access=entry-code", headers={"Host": "other.example"}))
+        assert denied.value.code == 403
+        with pytest.raises(HTTPError) as denied:
+            browser.open(Request(base + "/api/state", headers={"X-Session-Token": "private-token"}))
+        assert denied.value.code == 403
+        with pytest.raises(HTTPError) as denied:
+            browser.open(Request(base + "/access", data=urlencode({"code": "wrong"}).encode()))
+        assert denied.value.code == 403
+        page = browser.open(Request(base + "/access", data=urlencode({"code": "entry-code"}).encode()))
+        assert page.status == 200
+        assert page.headers["Referrer-Policy"] == "no-referrer"
+        assert b"const TOKEN" in page.read()
+        state = browser.open(Request(base + "/api/state", headers={"X-Session-Token": "private-token"}))
+        assert json.load(state)["report"]["exists"] is False
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "example.com"])
+def test_web_ui_rejects_nonlocal_bind_addresses(host: str):
+    with pytest.raises(ValueError, match="--host"):
+        launch_web_ui(argparse.Namespace(host=host, port=8765))
 
 
 def test_album_exclusion_covers_repeated_takeout_paths_and_persists(tmp_path: Path):
@@ -53,6 +105,39 @@ def test_album_exclusion_covers_repeated_takeout_paths_and_persists(tmp_path: Pa
     resumed = LocalApp(args)
     assert resumed.state()["counts"]["completed"] == 1
     assert resumed.state()["counts"]["selected"] == 0
+
+
+def test_scanned_media_view_includes_unmatched_without_selecting_it(tmp_path: Path):
+    media = tmp_path / "unmatched.jpg"
+    media.write_bytes(b"image")
+    report_path = tmp_path / "duplication-report.json"
+    report_path.write_text(json.dumps({
+        "schema_version": 1,
+        "inputs": {"takeout_root": str(tmp_path)},
+        "matches": [{
+            "confidence": "unmatched", "deletion_eligible": False,
+            "google": {
+                "path": str(media), "relative_path": "Album/unmatched.jpg",
+                "filename": "unmatched.jpg", "size": 5, "media_type": "image",
+                "sha1": hashlib.sha1(b"image").hexdigest(), "google_url": None,
+            },
+            "immich": None,
+        }],
+    }), encoding="utf-8")
+    args = argparse.Namespace(
+        takeout=str(tmp_path), immich_url="http://localhost:2283", path_map=[],
+        output=str(report_path), workers=4, browser_channel="chrome",
+    )
+    app = LocalApp(args)
+    assert app.candidate_page()["total"] == 0
+    page = app.candidate_page(view="scanned")
+    assert page["total"] == 1
+    assert page["items"][0]["candidate"] is False
+    assert page["items"][0]["selected"] is False
+    assert page["items"][0]["confidence"] == "unmatched"
+    assert app.state()["scan_folders"][0]["name"] == "Album"
+    with pytest.raises(WebError, match="Unknown candidate"):
+        app.set_selection({"type": "candidate", "id": page["items"][0]["id"], "selected": True})
 
 
 def test_media_size_rule_covers_images_and_videos_and_persists(tmp_path: Path):

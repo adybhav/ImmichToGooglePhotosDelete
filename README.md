@@ -29,6 +29,24 @@ Browser automation is inherently more fragile than an official API. Use **Test 1
 
 By default, the web UI listens only on `127.0.0.1:8765`. Any modern browser can display the UI. Chrome or Edge and Playwright are needed only for its trash buttons.
 
+### Open the web UI on a trusted local network
+
+To use the UI from another device on the same LAN, find this computer's private IPv4 address (for example, `192.168.1.50`) and launch the web command with `--host` set to **that address**:
+
+```powershell
+.\.venv\Scripts\python.exe -m immich_google_dedupe.cli web --host 192.168.1.50
+```
+
+On Linux, use `.venv/bin/python` in place of `.\.venv\Scripts\python.exe`. The server prints the LAN address and a new random access code on every start. Open the plain LAN address on the other device and enter that code on the access page. The ordinary `http://localhost:8765/` URL will not work while bound to the LAN address. Keep the code private: anyone who has it can review the report and start guarded trash actions. LAN mode uses HTTP, so use it only on a trusted network and do not forward the port from your router. Enter the Immich API key from the host PC when possible; HTTP requests from another device are not encrypted.
+
+If Windows Firewall blocks other devices, add a rule limited to this computer's LAN address, TCP port `8765`, and the local subnet. In an **elevated PowerShell** window, replace the example address with the one passed to `--host`:
+
+```powershell
+New-NetFirewallRule -DisplayName 'ImmichGPhotosReview8765' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 -LocalAddress 192.168.1.50 -RemoteAddress LocalSubnet -Profile Any
+```
+
+If the computer's LAN address changes, update the rule. Remove it later with `Remove-NetFirewallRule -DisplayName 'ImmichGPhotosReview8765'` from elevated PowerShell. On Linux, allow the same port from your LAN in your firewall if needed. Google sign-in and the automated browser still open on the **computer running Python**, so verify the Google account there before any trash run.
+
 ### Windows with Docker Desktop
 
 Use **PowerShell on Windows** for the commands below. Install [Python 3.10+](https://www.python.org/downloads/windows/) and [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) if needed. Start Docker Desktop in Linux-container mode and confirm Immich is running. Docker Desktop can use WSL 2 as its backend; you do **not** need to install or run this utility inside WSL for the Windows instructions. [Docker Desktop WSL 2 guide](https://docs.docker.com/desktop/features/wsl/)
@@ -81,7 +99,8 @@ If you only want to scan and review, replace `-e ".[browser]"` or `-e '.[browser
 2. Click **Find Immich in Docker** to see local published ports and readable bind mounts. A mapping is `PATH_IN_IMMICH=PATH_THIS_APP_CAN_READ`, one per line. Docker's container path and host source are different paths. Normal Immich uploads can use reliable API content checksums without a mapping; external-library originals need to be readable to prove byte-for-byte matches. [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/), [Immich external libraries](https://docs.immich.app/guides/external-library/)
 3. Enter the Immich API key and click **Check setup**. It tests the connection and up to 100 asset paths without hashing the library. A successful sample does not prove every external-library path is available. Click **Save settings** to keep the Takeout folder, URL, mappings, report path, and worker count in the ignored `.immich-gphotos-settings.json` file. The API key is not saved.
 4. Click **Build duplication report**. This is read-only and may take time for a large library. The JSON and CSV are written to `reports/` by default. If that JSON already exists, the UI loads it on startup; you can review it without rescanning. The scan uses four file-hash workers by default; directory traversal, Immich API pagination, and report writing are sequential.
-5. Review the exact matches. Uncheck a folder or item to keep it in Google Photos. A repeated Takeout item is excluded when any one of its folders is unchecked. The **Keep photos and videos at or below** rule defaults to **2 MiB**; change it and click **Apply** without rebuilding the report. It uses Takeout file bytes, which may differ from Google's displayed processed size. Review selections are saved in `reports/review-selection.json`.
+   For Takeouts from different Google accounts, extract each account into its own folder and run a separate UI workspace for each. Compare both against the same Immich user if desired, but keep the report, review choices, trash log, and Google sign-in browser profile separate per Google account. Each report counts media files, not the metadata JSON and other entries in the ZIP. Takeout's truncated `.MP` and `.MP~2` style filenames are treated as videos.
+5. Use **All scanned media** to browse every file considered by the report, including unmatched and metadata-only results. Those rows are read-only. Switch to **All exact matches** to choose what can be moved to trash. Uncheck a folder or item to keep it in Google Photos. A repeated Takeout item is excluded when any one of its folders is unchecked. The **Keep photos and videos at or below** rule defaults to **2 MiB**; change it and click **Apply** without rebuilding the report. It uses Takeout file bytes, which may differ from Google's displayed processed size. Review selections are saved in `reports/review-selection.json`.
 6. If you choose to move items to trash, click **Open sign-in browser**, sign in to the intended Google account in the regular Chrome/Edge window, and close the **entire window**. Click **Test 1 selected item**, verify the account in the automated browser, and check the result in Google Photos trash. Then use **Move selected to trash** when ready. Both actions require the displayed confirmation phrase. Each run writes a `reports/trash-run-*.json` log and skips items already recorded as moved.
 
 Google can reject sign-in in a browser controlled by Playwright, which is why this utility separates human sign-in from the automated trash run. For a report copied from another operating system, saved absolute Takeout paths still refer to the original computer; build a new report before trashing there. Saved UI exclusions and the media size rule apply to the UI's trash buttons; the CLI refuses `trash --execute` for that report while these are active unless explicitly given `--ignore-review-selection`.

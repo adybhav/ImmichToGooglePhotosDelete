@@ -7,8 +7,8 @@ from typing import Any, Callable
 
 from .models import GoogleItem
 from .util import (
-    MEDIA_EXTENSIONS,
     hash_file,
+    is_media_file,
     isoformat,
     is_google_photo_url,
     media_kind,
@@ -44,7 +44,7 @@ def _extract_taken_at(payload: dict[str, Any]):
 def _load_sidecars(root: Path) -> tuple[dict[Path, dict[str, Any]], int]:
     media_by_dir_name: dict[tuple[Path, str], list[Path]] = defaultdict(list)
     for path in root.rglob("*"):
-        if path.is_file() and path.suffix.lower() in MEDIA_EXTENSIONS:
+        if path.is_file() and is_media_file(path):
             media_by_dir_name[(path.parent, path.name.casefold())].append(path)
 
     metadata: dict[Path, dict[str, Any]] = {}
@@ -81,7 +81,7 @@ def scan_takeout(
         raise ValueError(f"Google Takeout path is not a directory: {root}")
     sidecars, orphan_count = _load_sidecars(root)
     media = sorted(
-        path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in MEDIA_EXTENSIONS
+        path for path in root.rglob("*") if path.is_file() and is_media_file(path)
     )
     def scan_media(path: Path) -> GoogleItem:
         if stop_requested and stop_requested():

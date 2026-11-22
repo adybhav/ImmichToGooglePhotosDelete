@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -16,8 +17,16 @@ MEDIA_EXTENSIONS = {
     ".3gp", ".arw", ".avi", ".bmp", ".cr2", ".dng", ".gif", ".heic",
     ".heif", ".jpeg", ".jpg", ".m4v", ".mkv", ".mov", ".mp4",
     ".mpeg", ".mpg", ".mts", ".nef", ".orf", ".png", ".raf", ".rw2",
-    ".tif", ".tiff", ".webm", ".webp",
+    ".tif", ".tiff", ".webm", ".webp", ".mp",
 }
+
+TAKEOUT_MP_SUFFIX = re.compile(r"\.mp~[2-9][0-9]*$")
+
+
+def is_media_file(path: Path) -> bool:
+    """Recognize media, including Google Takeout's truncated MP4 filenames."""
+    suffix = path.suffix.lower()
+    return suffix in MEDIA_EXTENSIONS or TAKEOUT_MP_SUFFIX.fullmatch(suffix) is not None
 
 Input = TypeVar("Input")
 Output = TypeVar("Output")
@@ -55,7 +64,8 @@ def ordered_parallel_map(
 
 def media_kind(path_or_mime: str) -> str:
     value = path_or_mime.lower()
-    if value.startswith("video/") or Path(value).suffix in {
+    suffix = Path(value).suffix
+    if value.startswith("video/") or suffix == ".mp" or TAKEOUT_MP_SUFFIX.fullmatch(suffix) or suffix in {
         ".3gp", ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".mts", ".webm"
     }:
         return "video"

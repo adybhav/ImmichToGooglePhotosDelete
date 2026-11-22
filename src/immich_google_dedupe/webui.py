@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import mimetypes
 import os
@@ -15,13 +16,14 @@ from collections import defaultdict, deque
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from http import HTTPStatus
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from .trash import is_declared_candidate, load_candidates, open_sign_in_browser, trash_candidates
-from .util import atomic_write_json
+from .util import atomic_write_json, is_google_photo_url
 from .setup import check_immich_setup, discover_immich
 
 
@@ -117,6 +119,9 @@ class LocalApp:
         self.report_digest = ""
         self.candidates: list[dict[str, Any]] = []
         self.by_id: dict[str, dict[str, Any]] = {}
+        self.all_records: list[dict[str, Any]] = []
+        self.preview_by_id: dict[str, dict[str, Any]] = {}
+        self.all_folder_index: dict[str, int] = {}
         self.folder_index: dict[str, set[str]] = {}
         self.excluded_folders: set[str] = set()
         self.deselected_ids: set[str] = set()
@@ -200,12 +205,23 @@ class LocalApp:
         digest = hashlib.sha256(raw).hexdigest()
         candidates = []
         by_id = {}
+        all_records = []
+        preview_by_id = {}
+        all_folder_index: dict[str, int] = defaultdict(int)
         folder_index: dict[str, set[str]] = defaultdict(set)
         for match in report["matches"]:
-            if not is_declared_candidate(match):
+            google = match["google"]
+            eligible = is_declared_candidate(match)
+            item_id = candidate_id(google["google_url"]) if eligible else "scan-" + hashlib.sha256(
+                str(google["path"]).encode("utf-8")
+            ).hexdigest()
+            record = {"id": item_id, "match": match, "folders": takeout_folders(match), "candidate": eligible}
+            all_records.append(record)
+            preview_by_id[item_id] = record
+            for folder in record["folders"]:
+                all_folder_index[folder] += 1
+            if not eligible:
                 continue
-            item_id = candidate_id(match["google"]["google_url"])
-            record = {"id": item_id, "match": match, "folders": takeout_folders(match)}
             candidates.append(record)
             by_id[item_id] = record
             for folder in record["folders"]:
@@ -250,6 +266,9 @@ class LocalApp:
             self.report_digest = digest
             self.candidates = candidates
             self.by_id = by_id
+            self.all_records = all_records
+            self.preview_by_id = preview_by_id
+            self.all_folder_index = dict(all_folder_index)
             self.folder_index = dict(folder_index)
             self.excluded_folders = excluded_folders
             self.deselected_ids = deselected_ids
@@ -315,6 +334,10 @@ class LocalApp:
                     "kept_by_size": kept_by_size,
                 },
                 "folders": folders,
+                "scan_folders": [
+                    {"name": name, "count": count, "excluded": False}
+                    for name, count in sorted(self.all_folder_index.items(), key=lambda item: item[0].casefold())
+                ],
                 "job": dict(self.job),
                 "events": [event for event in self.events if event["id"] > after],
                 "last_event_id": self.event_id,
@@ -325,15 +348,15 @@ class LocalApp:
     ) -> dict[str, Any]:
         if offset < 0 or limit < 1 or limit > 48:
             raise WebError("Invalid page size or offset")
-        if view not in {"all", "selected", "excluded", "completed"}:
+        if view not in {"all", "selected", "excluded", "completed", "scanned"}:
             raise WebError("Invalid review filter")
         needle = query.casefold().strip()
         with self.lock:
             rows = []
-            for record in self.candidates:
+            for record in self.all_records if view == "scanned" else self.candidates:
                 match = record["match"]
                 google = match["google"]
-                selected = self._is_selected(record)
+                selected = record["candidate"] and self._is_selected(record)
                 completed = record["id"] in self.completed_ids
                 if folder and folder not in record["folders"]:
                     continue
@@ -362,17 +385,19 @@ class LocalApp:
                     preview = False
                 page.append({
                     "id": record["id"],
+                    "candidate": record["candidate"],
+                    "confidence": match["confidence"],
                     "filename": google["filename"],
                     "relative_path": google["relative_path"],
                     "folders": record["folders"],
                     "size": google["size"],
                     "media_type": google["media_type"],
-                    "google_url": google["google_url"],
+                    "google_url": google.get("google_url") if is_google_photo_url(google.get("google_url")) else None,
                     "immich_filename": (match.get("immich") or {}).get("filename"),
                     "selected": self._is_selected(record),
                     "completed": record["id"] in self.completed_ids,
-                    "album_excluded": any(f in self.excluded_folders for f in record["folders"]),
-                    "size_excluded": self._is_size_excluded(record),
+                    "album_excluded": record["candidate"] and any(f in self.excluded_folders for f in record["folders"]),
+                    "size_excluded": record["candidate"] and self._is_size_excluded(record),
                     "preview": preview,
                 })
             return {"total": len(rows), "offset": offset, "limit": limit, "items": page}
@@ -621,7 +646,12 @@ class LocalApp:
         )
 
 
-def make_handler(app: LocalApp, token: str):
+def make_handler(
+    app: LocalApp, token: str, *, listen_host: str = "127.0.0.1",
+    require_access_link: bool = False, access_code: str | None = None,
+):
+    lan_code = access_code or token
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "ImmichDedupeLocalUI/1"
 
@@ -640,12 +670,49 @@ def make_handler(app: LocalApp, token: str):
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 pass
 
-        def _authorized(self, query: dict[str, list[str]] | None = None) -> bool:
+        def _host_allowed(self) -> bool:
             host = self.headers.get("Host", "").split(":", 1)[0]
+            allowed = {listen_host}
+            if listen_host == "127.0.0.1":
+                allowed.add("localhost")
+            return host in allowed
+
+        def _access_cookie(self) -> bool:
+            try:
+                cookies = SimpleCookie(self.headers.get("Cookie", ""))
+                saved = cookies.get("gphotos_access")
+                return saved is not None and secrets.compare_digest(saved.value, token)
+            except CookieError:
+                return False
+
+        def _grant_access(self) -> None:
+            self.send_response(HTTPStatus.SEE_OTHER)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", f"gphotos_access={token}; HttpOnly; SameSite=Strict; Path=/")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _login_page(self) -> None:
+            payload = b'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Local review access</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#f3f7f7;color:#152d35;margin:0;min-height:100vh;display:grid;place-items:center}main{background:white;border:1px solid #dce6e6;border-radius:16px;padding:28px;width:min(420px,calc(100% - 32px));box-shadow:0 12px 35px #193f450f}h1{font-size:22px;margin:0 0 8px}p{color:#64777d;font-size:14px}input{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cddcdd;border-radius:9px;font:inherit}button{width:100%;margin-top:14px;border:0;border-radius:9px;background:#087c73;color:white;padding:12px;font:700 15px system-ui;cursor:pointer}</style></head><body><main><h1>Local review access</h1><p>Enter the access code shown when the UI was started on the host computer.</p><form method="post" action="/access"><input type="password" name="code" aria-label="Access code" required autocomplete="off"><button type="submit">Open review UI</button></form></main></body></html>'''
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _authorized(self, query: dict[str, list[str]] | None = None) -> bool:
             provided = self.headers.get("X-Session-Token", "")
             if query is not None:
                 provided = query.get("token", [""])[0]
-            return host in {"127.0.0.1", "localhost"} and secrets.compare_digest(provided, token)
+            return (
+                self._host_allowed() and secrets.compare_digest(provided, token)
+                and (not require_access_link or self._access_cookie())
+            )
 
         def _file(self, path: Path, content_type: str, *, download: bool = False) -> None:
             size = path.stat().st_size
@@ -667,16 +734,24 @@ def make_handler(app: LocalApp, token: str):
             parsed = urlsplit(self.path)
             query = parse_qs(parsed.query)
             if parsed.path == "/":
-                host = self.headers.get("Host", "").split(":", 1)[0]
-                if host not in {"127.0.0.1", "localhost"}:
+                access = query.get("access", [""])[0]
+                if not self._host_allowed():
                     self.send_error(HTTPStatus.FORBIDDEN)
                     return
+                if require_access_link:
+                    if secrets.compare_digest(access, lan_code):
+                        self._grant_access()
+                        return
+                    if not self._access_cookie():
+                        self._login_page()
+                        return
                 source = Path(__file__).with_name("webui.html").read_text(encoding="utf-8")
                 payload = source.replace("__APP_TOKEN_JSON__", json.dumps(token)).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(payload)))
                 self.send_header("Cache-Control", "no-store")
+                self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
                 self.end_headers()
                 self.wfile.write(payload)
@@ -700,7 +775,7 @@ def make_handler(app: LocalApp, token: str):
                 elif parsed.path.startswith("/api/preview/"):
                     item_id = parsed.path.removeprefix("/api/preview/")
                     with app.lock:
-                        record = app.by_id.get(item_id)
+                        record = app.preview_by_id.get(item_id)
                         root = Path((app.report or {}).get("inputs", {}).get("takeout_root") or "")
                     if record is None:
                         raise WebError("Unknown image", 404)
@@ -726,6 +801,23 @@ def make_handler(app: LocalApp, token: str):
                 self._json({"error": str(exc)}, exc.status if isinstance(exc, WebError) else 400)
 
         def do_POST(self) -> None:
+            if urlsplit(self.path).path == "/access":
+                if not require_access_link or not self._host_allowed():
+                    self.send_error(HTTPStatus.FORBIDDEN)
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if not 0 < length <= 4096 or "application/x-www-form-urlencoded" not in self.headers.get("Content-Type", ""):
+                    self.send_error(HTTPStatus.BAD_REQUEST)
+                    return
+                submitted = parse_qs(self.rfile.read(length).decode("utf-8", errors="replace")).get("code", [""])[0]
+                if not secrets.compare_digest(submitted, lan_code):
+                    self.send_error(HTTPStatus.FORBIDDEN)
+                    return
+                self._grant_access()
+                return
             if not self._authorized() or "application/json" not in self.headers.get("Content-Type", ""):
                 self._json({"error": "Unauthorized local request"}, 403)
                 return
@@ -766,12 +858,28 @@ def make_handler(app: LocalApp, token: str):
 def launch_web_ui(args: argparse.Namespace) -> int:
     if args.port < 0 or args.port > 65535:
         raise ValueError("Port must be between 0 and 65535")
+    try:
+        host = ipaddress.IPv4Address(args.host)
+    except ipaddress.AddressValueError as exc:
+        raise ValueError("--host must be a local IPv4 address") from exc
+    if not (host.is_loopback or host.is_private) or host.is_unspecified:
+        raise ValueError("--host must be a loopback or private LAN IPv4 address")
     app = LocalApp(args)
     token = secrets.token_urlsafe(32)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(app, token))
+    lan_mode = not host.is_loopback
+    access_code = secrets.token_urlsafe(18) if lan_mode else None
+    server = ThreadingHTTPServer(
+        (str(host), args.port),
+        make_handler(app, token, listen_host=str(host), require_access_link=lan_mode, access_code=access_code),
+    )
     server.daemon_threads = True
-    url = f"http://127.0.0.1:{server.server_port}/"
-    print(f"Local review UI: {url}", flush=True)
+    url = f"http://{host}:{server.server_port}/"
+    if lan_mode:
+        print(f"Private LAN review UI: {url}", flush=True)
+        print(f"Access code: {access_code}", flush=True)
+        print("Anyone with the access code on the local network can review reports and start trash runs. Keep it private.", flush=True)
+    else:
+        print(f"Local review UI: {url}", flush=True)
     print("Press Ctrl+C here to close the UI.", flush=True)
     if not args.no_open:
         webbrowser.open(url)

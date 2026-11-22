@@ -185,7 +185,7 @@
         <section class="panel"><div class="status-panel"><div class="status-top"><div class="status-title"><span class="status-dot" id="status-dot"></span><span id="status-text">Ready to build a report</span></div><span class="hint" id="status-detail"></span></div><div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div><div class="login-gate" id="login-gate"><strong>Check the Google account in Chrome</strong><p>Verify the account is already signed in. If Google asks for sign-in, stop this run and use the separate sign-in browser button first.</p><button id="login-btn" class="primary">I verified the account · Continue</button></div><div class="stop-row"><button id="stop-btn" class="quiet" style="display:none">Stop after current item</button></div></div><div class="console" id="console"><div class="console-empty">Progress and results will appear here.</div></div></section>
       </div>
     </div>
-    <section class="panel review" id="review"><div class="review-head"><div><p class="eyebrow" style="margin:0 0 5px">Review queue</p><h2>Choose what stays in both places</h2><p>Uncheck a Takeout folder or an individual photo. A photo in multiple folders is excluded if any one of those folders is unchecked.</p></div><div class="downloads" id="downloads" style="display:none"><a id="csv-link">Download CSV</a><a id="json-link">Download JSON</a></div></div><div class="review-tools"><div class="search"><input id="query" placeholder="Search filenames or paths" aria-label="Search candidates"></div><select id="view" aria-label="Review filter"><option value="all">All exact matches</option><option value="selected">Selected</option><option value="excluded">Kept in both places</option><option value="completed">Already moved</option></select></div><div class="review-grid"><aside class="folders" id="folders"><div class="folders-title">Takeout folders / albums</div><div class="microcopy" style="padding:0 6px">Build a report to see folders.</div></aside><div class="cards-area"><div class="results-line"><span id="results-count">No candidates loaded</span><span id="folder-filter"></span></div><div class="cards" id="cards"><div class="empty">Your exact matches will appear here after the scan.</div></div><div class="pager"><button id="prev-btn" disabled>Previous</button><span id="page-label">—</span><button id="next-btn" disabled>Next</button></div></div></div></section>
+    <section class="panel review" id="review"><div class="review-head"><div><p class="eyebrow" style="margin:0 0 5px">Review queue</p><h2>Choose what stays in both places</h2><p>Browse every scanned Takeout file or review exact matches. Only exact matches with a Google Photos URL can be selected for trash. Uncheck a folder or match to keep it in Google Photos.</p></div><div class="downloads" id="downloads" style="display:none"><a id="csv-link">Download CSV</a><a id="json-link">Download JSON</a></div></div><div class="review-tools"><div class="search"><input id="query" placeholder="Search filenames or paths" aria-label="Search media"></div><select id="view" aria-label="Review filter"><option value="all">All exact matches</option><option value="scanned">All scanned media</option><option value="selected">Selected</option><option value="excluded">Kept in both places</option><option value="completed">Already moved</option></select></div><div class="review-grid"><aside class="folders" id="folders"><div class="folders-title">Takeout folders / albums</div><div class="microcopy" style="padding:0 6px">Build a report to see folders.</div></aside><div class="cards-area"><div class="results-line"><span id="results-count">No candidates loaded</span><span id="folder-filter"></span></div><div class="cards" id="cards"><div class="empty">Your exact matches will appear here after the scan.</div></div><div class="pager"><button id="prev-btn" disabled>Previous</button><span id="page-label">—</span><button id="next-btn" disabled>Next</button></div></div></div></section>
   </main>
   <dialog id="confirm-dialog"><div class="modal-inner"><p class="eyebrow">Confirm Google Photos trash</p><h2 id="modal-title">Move selected items?</h2><p id="modal-copy"></p><span class="phrase" id="modal-phrase"></span><input class="confirm-input" id="confirm-input" placeholder="Type the phrase exactly" autocomplete="off"><div class="modal-actions"><button id="modal-cancel" class="quiet">Cancel</button><button id="modal-submit" class="danger">Open Chrome and continue</button></div></div></dialog>
   <div id="toast" class="toast" role="status"></div>
@@ -284,11 +284,11 @@
       while (consoleBox.children.length > 250) consoleBox.firstChild.remove();
       if (nearBottom) consoleBox.scrollTop = consoleBox.scrollHeight;
     }
-    function renderFolders(folders, busy) {
+    function renderFolders(folders, busy, scanned = false) {
       const container = $('folders'); container.innerHTML = '<div class="folders-title">Takeout folders / albums</div>';
       if (!folders.length) { const p = document.createElement('p'); p.className = 'microcopy'; p.textContent = 'Build a report to see folders.'; container.append(p); return; }
       const all = document.createElement('div'); all.className = 'folder-row' + (!folderFilter ? ' active' : '');
-      const allButton = document.createElement('button'); allButton.textContent = 'All folders'; allButton.onclick = () => { folderFilter = ''; offset = 0; renderFolders(folders, busy); loadCandidates(); };
+      const allButton = document.createElement('button'); allButton.textContent = 'All folders'; allButton.onclick = () => { folderFilter = ''; offset = 0; renderFolders(folders, busy, scanned); loadCandidates(); };
       all.append(allButton); container.append(all);
       for (const folder of folders) {
         const row = document.createElement('div'); row.className = 'folder-row' + (folder.name === folderFilter ? ' active' : '') + (folder.excluded ? ' excluded' : '');
@@ -296,9 +296,10 @@
         include.title = folder.excluded ? 'Include this folder' : 'Keep this folder in Google Photos';
         include.onchange = async () => { try { await api('/api/selection', {type:'folder',name:folder.name,excluded:!include.checked}); await refresh(true); } catch(error) { toast(error.message,true); include.checked = !include.checked; } };
         const button = document.createElement('button'); button.textContent = folder.name; button.title = folder.name;
-        button.onclick = () => { folderFilter = folder.name; offset = 0; renderFolders(folders, busy); loadCandidates(); };
+        button.onclick = () => { folderFilter = folder.name; offset = 0; renderFolders(folders, busy, scanned); loadCandidates(); };
         const count = document.createElement('small'); count.textContent = formatNumber(folder.count);
-        row.append(include,button,count); container.append(row);
+        if (!scanned) row.append(include);
+        row.append(button,count); container.append(row);
       }
     }
     function renderState(state) {
@@ -349,7 +350,10 @@
         else { fill.className = 'progress-fill indeterminate'; fill.style.width = ''; }
       }
       if (report.revision !== lastRevision) {
-        lastRevision = report.revision; renderFolders(state.folders, busy); loadCandidates();
+        lastRevision = report.revision;
+        const scanned = $('view').value === 'scanned';
+        renderFolders(scanned ? state.scan_folders : state.folders, busy, scanned);
+        loadCandidates();
       }
     }
     async function loadCandidates() {
@@ -357,19 +361,22 @@
       const params = new URLSearchParams({offset,limit:24,query:$('query').value,folder:folderFilter,view:$('view').value});
       try {
         const page = await api('/api/candidates?' + params);
-        $('results-count').textContent = formatNumber(page.total) + ' matching candidates';
+        const scanned = $('view').value === 'scanned';
+        $('results-count').textContent = formatNumber(page.total) + (scanned ? ' scanned media files' : ' matching candidates');
         $('folder-filter').textContent = folderFilter || '';
         const cards = $('cards'); cards.innerHTML = '';
-        if (!page.items.length) { cards.innerHTML = '<div class="empty">No candidates match this view.</div>'; }
+        if (!page.items.length) { cards.innerHTML = '<div class="empty">No media matches this view.</div>'; }
         for (const item of page.items) {
           const card = document.createElement('article'); card.className = 'card';
           const thumb = item.preview ? `<img loading="lazy" src="/api/preview/${item.id}?token=${encodeURIComponent(TOKEN)}" alt="">` : `<span>${item.media_type === 'video' ? '▶' : '◇'}</span>`;
-          const badge = item.completed ? 'Moved' : item.album_excluded ? 'Folder excluded' : item.size_excluded ? 'Below size limit' : item.selected ? 'Exact match' : 'Kept';
+          const badge = !item.candidate ? item.confidence === 'exact_hash' ? 'Exact · review only' : item.confidence === 'unmatched' ? 'No Immich match' : 'Metadata match only' : item.completed ? 'Moved' : item.album_excluded ? 'Folder excluded' : item.size_excluded ? 'Below size limit' : item.selected ? 'Exact match' : 'Kept';
           const checked = item.selected ? 'checked' : '';
           const disabled = item.completed || item.album_excluded || item.size_excluded || currentState.job.status === 'running' ? 'disabled' : '';
-          card.innerHTML = `<div class="thumb">${thumb}<span class="badge ${item.completed ? 'completed' : ''}">${badge}</span></div><div class="card-body"><div class="card-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div><div class="card-path" title="${escapeHtml(item.relative_path)}">${escapeHtml(item.relative_path)} · ${formatSize(item.size)}</div><div class="card-bottom"><label><input type="checkbox" ${checked} ${disabled}> Select</label><a target="_blank" rel="noopener noreferrer">Google Photos ↗</a></div></div>`;
-          card.querySelector('a').href = item.google_url;
-          card.querySelector('input').onchange = async event => { try { await api('/api/selection',{type:'candidate',id:item.id,selected:event.target.checked}); await refresh(true); } catch(error) { toast(error.message,true); event.target.checked = !event.target.checked; } };
+          const selection = item.candidate ? `<label><input type="checkbox" ${checked} ${disabled}> Select</label>` : '<span>Review only</span>';
+          const link = item.google_url ? '<a target="_blank" rel="noopener noreferrer">Google Photos ↗</a>' : '<span>No Photos link</span>';
+          card.innerHTML = `<div class="thumb">${thumb}<span class="badge ${item.completed ? 'completed' : ''}">${badge}</span></div><div class="card-body"><div class="card-name" title="${escapeHtml(item.filename)}">${escapeHtml(item.filename)}</div><div class="card-path" title="${escapeHtml(item.relative_path)}">${escapeHtml(item.relative_path)} · ${formatSize(item.size)}</div><div class="card-bottom">${selection}${link}</div></div>`;
+          if (item.google_url) card.querySelector('a').href = item.google_url;
+          if (item.candidate) card.querySelector('input').onchange = async event => { try { await api('/api/selection',{type:'candidate',id:item.id,selected:event.target.checked}); await refresh(true); } catch(error) { toast(error.message,true); event.target.checked = !event.target.checked; } };
           cards.append(card);
         }
         $('prev-btn').disabled = offset === 0; $('next-btn').disabled = offset + page.limit >= page.total;
@@ -440,7 +447,15 @@
     $('login-btn').onclick = async () => { try { await api('/api/login-ready',{}); await refresh(true); } catch(error) { toast(error.message,true); } };
     $('stop-btn').onclick = async () => { try { await api('/api/stop',{}); toast('Stop requested. The current item may finish.'); } catch(error) { toast(error.message,true); } };
     $('query').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { offset = 0; loadCandidates(); },250); };
-    $('view').onchange = () => { offset = 0; loadCandidates(); };
+    $('view').onchange = () => {
+      offset = 0; folderFilter = '';
+      if (currentState) {
+        const scanned = $('view').value === 'scanned';
+        renderFolders(scanned ? currentState.scan_folders : currentState.folders,
+          currentState.job.status === 'running', scanned);
+      }
+      loadCandidates();
+    };
     $('prev-btn').onclick = () => { offset = Math.max(0,offset - 24); loadCandidates(); };
     $('next-btn').onclick = () => { offset += 24; loadCandidates(); };
     refresh(); setInterval(refresh,1200);
