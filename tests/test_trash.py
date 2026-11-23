@@ -191,7 +191,8 @@ def test_confirmation_click_skips_covered_toolbar_icon(word: str):
             browser.close()
 
 
-def test_confirmation_handles_google_trash_retention_notice():
+@pytest.mark.parametrize("label", ["Got it, continue", "Got it – continue"])
+def test_confirmation_handles_google_trash_retention_notice(label: str):
     playwright = pytest.importorskip("playwright.sync_api")
     with playwright.sync_playwright() as manager:
         try:
@@ -204,12 +205,12 @@ def test_confirmation_handles_google_trash_retention_notice():
                 <div id="notice" role="dialog">
                   You now have 30 days to restore items in trash
                   <button onclick="document.getElementById('notice').remove(); document.getElementById('confirm').hidden=false">
-                    Got it, continue
+                    __LABEL__
                   </button>
                 </div>
                 <button id="confirm" hidden onclick="window.confirmed=true; this.remove()">Move to trash</button>
                 <button aria-label="Move to trash">🗑</button>
-            """)
+            """.replace("__LABEL__", label))
             trash.click_trash_confirmation(
                 page, re.compile(DEFAULT_TRASH_BUTTON_PATTERN, re.IGNORECASE)
             )

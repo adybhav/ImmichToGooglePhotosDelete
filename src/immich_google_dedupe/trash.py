@@ -100,8 +100,9 @@ def click_trash_confirmation(page: Any, pattern: re.Pattern[str]) -> None:
     confirm = page.get_by_role("button", name=pattern).filter(
         has_text=text_pattern, visible=True
     )
-    notice = page.get_by_role("button", name=re.compile(r"^Got it, continue$", re.IGNORECASE)).filter(
-        has_text=re.compile(r"Got it, continue", re.IGNORECASE), visible=True
+    notice_pattern = re.compile(r"^Got it\s*[,–—-]?\s*continue$", re.IGNORECASE)
+    notice = page.get_by_role("button", name=notice_pattern).filter(
+        has_text=re.compile(r"Got it.*continue", re.IGNORECASE | re.DOTALL), visible=True
     )
     notice.or_(confirm).first.wait_for(state="visible", timeout=8_000)
     if notice.is_visible():
