@@ -173,6 +173,7 @@
           <div id="setup-results" class="setup-results" aria-live="polite"></div>
           <p class="microcopy">The API key is used for checks and scans, never saved in local settings, the report, or browser storage. Setup checks read only a small Immich sample; scanning never changes photos.</p>
           <button id="scan-btn" class="primary full">Build duplication report</button>
+          <button id="queue-scan-btn" class="outline full" style="display:none;margin-top:10px">Queue report after extraction</button>
         </div>
       </section>
       <div class="stack">
@@ -328,6 +329,9 @@
       $('metric-completed').textContent = report.exists ? formatNumber(counts.completed) : '—';
       $('report-time').textContent = report.exists ? 'Report · ' + new Date(report.generated_at).toLocaleString() : 'No report loaded yet';
       $('scan-btn').disabled = busy; $('scan-btn').textContent = busy && job.kind === 'scan' ? 'Scanning…' : 'Build duplication report';
+      $('queue-scan-btn').style.display = state.config.queue_marker ? 'block' : 'none';
+      $('queue-scan-btn').disabled = busy || report.exists;
+      $('queue-scan-btn').textContent = job.kind === 'queued_scan' && busy ? 'Queued · waiting for extraction' : 'Queue report after extraction';
       $('docker-btn').disabled = busy; $('check-btn').disabled = busy; $('save-btn').disabled = busy;
       $('auth-btn').disabled = busy;
       $('size-filter-enabled').disabled = busy || !report.exists;
@@ -340,7 +344,7 @@
       $('all-btn').disabled = busy || !report.exists || counts.selected < 1;
       $('all-btn').textContent = counts.selected ? `Move ${formatNumber(counts.selected)} selected to trash` : 'Move selected to trash';
       $('status-dot').className = 'status-dot ' + (busy ? 'running' : job.status === 'done' ? 'done' : job.status === 'failed' ? 'failed' : '');
-      $('status-text').textContent = busy ? (job.kind === 'scan' ? 'Building duplication report' : 'Moving selected items to trash') : job.status === 'done' ? 'Last job completed' : job.status === 'failed' ? 'Last job failed' : job.status === 'cancelled' ? 'Last job stopped' : report.exists ? 'Ready for review' : 'Ready to build a report';
+      $('status-text').textContent = busy ? (job.kind === 'scan' ? 'Building duplication report' : job.kind === 'queued_scan' ? 'Waiting for extraction' : 'Moving selected items to trash') : job.status === 'done' ? 'Last job completed' : job.status === 'failed' ? 'Last job failed' : job.status === 'cancelled' ? 'Last job stopped' : report.exists ? 'Ready for review' : 'Ready to build a report';
       $('status-detail').textContent = busy && job.kind === 'trash' ? formatNumber(job.planned) + ' planned' : report.exists ? formatNumber(counts.selected) + ' selected' : '';
       $('login-gate').style.display = busy && job.waiting_login ? 'block' : 'none';
       $('stop-btn').style.display = busy ? 'inline-block' : 'none';
@@ -406,6 +410,11 @@
     $('scan-btn').onclick = async () => {
       const payload = {...setupPayload(),api_key:$('api-key').value};
       try { await api('/api/scan',payload); $('api-key').value = ''; toast('Scan started. Progress will appear below.'); await refresh(true); }
+      catch(error) { toast(error.message,true); }
+    };
+    $('queue-scan-btn').onclick = async () => {
+      const payload = {...setupPayload(),api_key:$('api-key').value};
+      try { await api('/api/scan/queue',payload); $('api-key').value = ''; toast('Report queued. It will start when extraction is verified.'); await refresh(true); }
       catch(error) { toast(error.message,true); }
     };
     $('docker-btn').onclick = async () => {

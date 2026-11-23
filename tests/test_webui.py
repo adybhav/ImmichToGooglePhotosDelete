@@ -95,6 +95,28 @@ def test_one_ui_switches_between_isolated_account_workspaces(tmp_path: Path):
         worker.join(timeout=2)
 
 
+def test_queued_scan_waits_for_extraction_and_does_not_save_key(tmp_path: Path):
+    settings_path = tmp_path / ".immich-gphotos-settings.json"
+    marker = tmp_path / "ready.json"
+    settings_path.write_text(json.dumps({"version": 1, "queue_marker": str(marker)}), encoding="utf-8")
+    args = argparse.Namespace(
+        takeout=None, immich_url=None, path_map=None, output=None,
+        workers=None, browser_channel=None, settings_path=settings_path,
+    )
+    app = LocalApp(args)
+    app.queue_scan({
+        "takeout": str(tmp_path / "not-extracted-yet"),
+        "immich_url": "http://localhost:2283", "path_map": [],
+        "output": str(tmp_path / "report.json"), "workers": 4,
+        "api_key": "private-test-key",
+    })
+    assert app.state()["job"]["kind"] == "queued_scan"
+    assert "private-test-key" not in settings_path.read_text(encoding="utf-8")
+    app.stop()
+    app.job_thread.join(timeout=2)
+    assert app.state()["job"]["status"] == "cancelled"
+
+
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "example.com"])
 def test_web_ui_rejects_nonlocal_bind_addresses(host: str):
     with pytest.raises(ValueError, match="--host"):

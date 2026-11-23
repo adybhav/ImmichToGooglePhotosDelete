@@ -70,6 +70,12 @@ def create_scan_report(
     google_items, google_stats = scan_takeout(
         takeout, progress, workers=args.workers, stop_requested=stop_requested
     )
+    expected_media_files = getattr(args, "expected_media_files", None)
+    if expected_media_files is not None and google_stats["exported_media_files"] != expected_media_files:
+        raise ValueError(
+            f"Takeout scan found {google_stats['exported_media_files']} media files; "
+            f"expected {expected_media_files}. No report was written."
+        )
     progress("Comparing content hashes and metadata...")
     matches = match_items(google_items, assets, time_tolerance_seconds=args.time_tolerance)
     report = build_report(

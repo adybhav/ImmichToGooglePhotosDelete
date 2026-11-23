@@ -114,6 +114,7 @@ class LocalApp:
             "output": str(Path(args.output if args.output is not None else saved.get("output", "reports/duplication-report.json")).expanduser().resolve()),
             "workers": args.workers if args.workers is not None else saved.get("workers", 4),
             "browser_channel": args.browser_channel if args.browser_channel is not None else saved.get("browser_channel", "auto"),
+            "queue_marker": saved.get("queue_marker", ""),
         }
         self.report_path = Path(self.config["output"])
         self.report: dict[str, Any] | None = None
@@ -494,6 +495,7 @@ class LocalApp:
                     path_map=path_maps, immich_storage=None,
                     immich_api_key=key, workers=workers, time_tolerance=2,
                     timeout=30.0, insecure=False,
+                    expected_media_files=self.config.get("expected_media_files"),
                 )
                 report, json_path, csv_path = create_scan_report(
                     scan_args, scan_progress, stop_requested=self.stop_event.is_set
@@ -512,6 +514,44 @@ class LocalApp:
                     self._finish_job("failed", f"Scan failed: {exc}")
 
         self.job_thread = threading.Thread(target=work, name="dedupe-scan", daemon=True)
+        self.job_thread.start()
+
+    def queue_scan(self, payload: dict[str, Any]) -> None:
+        key = str(payload.get("api_key") or "").strip()
+        if not key:
+            raise WebError("Enter an Immich API key to queue the report")
+        marker_text = str(self.config.get("queue_marker") or "")
+        if not marker_text:
+            raise WebError("This account has no extraction completion marker")
+        values = setup_values(payload)
+        marker = Path(marker_text)
+        with self.lock:
+            self._begin_job("queued_scan")
+            self.config.update(values)
+            self._save_settings()
+        self.log(f"Report queued. Waiting for verified extraction marker: {marker}")
+
+        def wait_and_scan() -> None:
+            try:
+                while not marker.is_file():
+                    if self.stop_event.wait(10):
+                        self._finish_job("cancelled", "Queued report cancelled.")
+                        return
+                ready = json.loads(marker.read_text(encoding="utf-8"))
+                if ready.get("takeout_root") != values["takeout"] or type(ready.get("media_files")) is not int or ready["media_files"] < 1:
+                    raise WebError("Extraction marker does not match this Takeout folder")
+                with self.lock:
+                    if self.stop_event.is_set():
+                        self._finish_job("cancelled", "Queued report cancelled.")
+                        return
+                    self.config["expected_media_files"] = ready["media_files"]
+                    self.job = {"status": "idle", "kind": None}
+                self.log(f"Extraction verified: {ready['media_files']} media files. Starting report.")
+                self.start_scan(payload)
+            except Exception as exc:
+                self._finish_job("failed", f"Queued report failed: {exc}")
+
+        self.job_thread = threading.Thread(target=wait_and_scan, name="dedupe-queued-scan", daemon=True)
         self.job_thread.start()
 
     def _wait_for_login(self) -> bool:
@@ -642,7 +682,7 @@ class LocalApp:
         self.login_event.set()
         self.log(
             "Stop requested. Hashing will stop shortly."
-            if kind == "scan" else
+            if kind in {"scan", "queued_scan"} else
             "Stop requested. The current browser action may finish; no next item will start."
         )
 
@@ -862,6 +902,8 @@ def make_handler(
                 app = apps[self._account()]
                 if path == "/api/scan":
                     app.start_scan(payload)
+                elif path == "/api/scan/queue":
+                    app.queue_scan(payload)
                 elif path == "/api/setup/save":
                     app.save_setup(payload)
                 elif path == "/api/setup/check":
