@@ -7,6 +7,12 @@ import pytest
 from immich_google_dedupe.takeout import scan_takeout
 
 
+def test_scan_takeout_rejects_empty_media_folder(tmp_path: Path):
+    (tmp_path / "metadata.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="No Takeout media"):
+        scan_takeout(tmp_path)
+
+
 @pytest.mark.parametrize("workers", [1, 4])
 def test_scan_takeout_associates_sidecar(tmp_path: Path, workers: int):
     album = tmp_path / "Takeout" / "Google Photos" / "Album"

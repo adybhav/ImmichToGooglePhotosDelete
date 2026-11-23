@@ -41,10 +41,12 @@ def _extract_taken_at(payload: dict[str, Any]):
     return parse_timestamp(payload.get("creationTime"))
 
 
-def _load_sidecars(root: Path) -> tuple[dict[Path, dict[str, Any]], int]:
+def _load_sidecars(root: Path) -> tuple[dict[Path, dict[str, Any]], int, list[Path]]:
     media_by_dir_name: dict[tuple[Path, str], list[Path]] = defaultdict(list)
+    media: list[Path] = []
     for path in root.rglob("*"):
         if path.is_file() and is_media_file(path):
+            media.append(path)
             media_by_dir_name[(path.parent, path.name.casefold())].append(path)
 
     metadata: dict[Path, dict[str, Any]] = {}
@@ -67,7 +69,7 @@ def _load_sidecars(root: Path) -> tuple[dict[Path, dict[str, Any]], int]:
                 metadata[matches[0]] = {"payload": payload, "path": sidecar}
         elif not matches and any(key in payload for key in ("photoTakenTime", "url", "title")):
             orphan_count += 1
-    return metadata, orphan_count
+    return metadata, orphan_count, media
 
 
 def scan_takeout(
@@ -79,10 +81,10 @@ def scan_takeout(
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"Google Takeout path is not a directory: {root}")
-    sidecars, orphan_count = _load_sidecars(root)
-    media = sorted(
-        path for path in root.rglob("*") if path.is_file() and is_media_file(path)
-    )
+    sidecars, orphan_count, media = _load_sidecars(root)
+    media.sort()
+    if not media:
+        raise ValueError(f"No Takeout media found in {root}; check that the drive and extracted files are readable")
     def scan_media(path: Path) -> GoogleItem:
         if stop_requested and stop_requested():
             raise RuntimeError("Scan stopped")
