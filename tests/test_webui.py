@@ -117,6 +117,29 @@ def test_queued_scan_waits_for_extraction_and_does_not_save_key(tmp_path: Path):
     assert app.state()["job"]["status"] == "cancelled"
 
 
+def test_queued_scan_starts_after_matching_marker(tmp_path: Path, monkeypatch):
+    settings_path = tmp_path / ".immich-gphotos-settings.json"
+    marker = tmp_path / "ready.json"
+    takeout = str(tmp_path / "Takeout" / "Google Photos")
+    settings_path.write_text(json.dumps({"version": 1, "queue_marker": str(marker)}), encoding="utf-8")
+    marker.write_text(json.dumps({"takeout_root": takeout, "media_files": 12}), encoding="utf-8")
+    args = argparse.Namespace(
+        takeout=None, immich_url=None, path_map=None, output=None,
+        workers=None, browser_channel=None, settings_path=settings_path,
+    )
+    app = LocalApp(args)
+    calls = []
+    monkeypatch.setattr(app, "start_scan", lambda payload: calls.append(payload))
+    payload = {
+        "takeout": takeout, "immich_url": "http://localhost:2283", "path_map": [],
+        "output": str(tmp_path / "report.json"), "workers": 4, "api_key": "test-key",
+    }
+    app.queue_scan(payload)
+    app.job_thread.join(timeout=2)
+    assert calls == [payload]
+    assert app.config["expected_media_files"] == 12
+
+
 @pytest.mark.parametrize("host", ["0.0.0.0", "8.8.8.8", "example.com"])
 def test_web_ui_rejects_nonlocal_bind_addresses(host: str):
     with pytest.raises(ValueError, match="--host"):
