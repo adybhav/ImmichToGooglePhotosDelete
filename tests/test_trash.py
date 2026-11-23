@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from immich_google_dedupe import trash
-from immich_google_dedupe.trash import load_candidates, resolve_browser_channel
+from immich_google_dedupe.trash import DEFAULT_TRASH_BUTTON_PATTERN, load_candidates, resolve_browser_channel
 
 
 def report_for(path: Path, *, google_sha1: str, immich_sha1: str | None = None):
@@ -156,7 +156,8 @@ def test_trash_run_stops_if_google_redirects_to_sign_in(tmp_path: Path, monkeypa
     assert not result_path.exists()
 
 
-def test_confirmation_click_skips_covered_toolbar_icon():
+@pytest.mark.parametrize("word", ["trash", "bin"])
+def test_confirmation_click_skips_covered_toolbar_icon(word: str):
     playwright = pytest.importorskip("playwright.sync_api")
     with playwright.sync_playwright() as manager:
         try:
@@ -174,18 +175,45 @@ def test_confirmation_click_skips_covered_toolbar_icon():
                 <div id="overlay"><div id="dialog" role="dialog">
                   Remove from your Google Account?
                   <button id="confirm" onclick="window.confirmed=true; document.getElementById('overlay').remove()">
-                    Move to trash
+                    Move to __WORD__
                   </button>
                 </div></div>
-                <button id="toolbar" aria-label="Move to trash">🗑</button>
-            """)
-            pattern = re.compile(r"^(Move to trash|Trash)$", re.IGNORECASE)
+                <button id="toolbar" aria-label="Move to __WORD__">🗑</button>
+            """.replace("__WORD__", word))
+            pattern = re.compile(DEFAULT_TRASH_BUTTON_PATTERN, re.IGNORECASE)
             assert page.get_by_role("button", name=pattern).last.get_attribute("id") == "toolbar"
 
             trash.click_trash_confirmation(page, pattern)
 
             assert page.evaluate("window.confirmed") is True
             assert page.locator("#overlay").count() == 0
+        finally:
+            browser.close()
+
+
+def test_confirmation_handles_google_trash_retention_notice():
+    playwright = pytest.importorskip("playwright.sync_api")
+    with playwright.sync_playwright() as manager:
+        try:
+            browser = manager.chromium.launch(channel="chrome", headless=True)
+        except Exception as exc:
+            pytest.skip(f"Chrome browser unavailable for popup test: {exc}")
+        try:
+            page = browser.new_page()
+            page.set_content("""
+                <div id="notice" role="dialog">
+                  You now have 30 days to restore items in trash
+                  <button onclick="document.getElementById('notice').remove(); document.getElementById('confirm').hidden=false">
+                    Got it, continue
+                  </button>
+                </div>
+                <button id="confirm" hidden onclick="window.confirmed=true; this.remove()">Move to trash</button>
+                <button aria-label="Move to trash">🗑</button>
+            """)
+            trash.click_trash_confirmation(
+                page, re.compile(DEFAULT_TRASH_BUTTON_PATTERN, re.IGNORECASE)
+            )
+            assert page.evaluate("window.confirmed") is True
         finally:
             browser.close()
 

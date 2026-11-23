@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 from .util import atomic_write_json, hash_file, is_google_photo_url, ordered_parallel_map
 
+DEFAULT_TRASH_BUTTON_PATTERN = r"^(Move to (trash|bin)|Trash|Bin)$"
+
 
 def resolve_browser_channel(requested: str) -> str:
     if requested != "auto":
@@ -98,6 +100,12 @@ def click_trash_confirmation(page: Any, pattern: re.Pattern[str]) -> None:
     confirm = page.get_by_role("button", name=pattern).filter(
         has_text=text_pattern, visible=True
     )
+    notice = page.get_by_role("button", name=re.compile(r"^Got it, continue$", re.IGNORECASE)).filter(
+        has_text=re.compile(r"Got it, continue", re.IGNORECASE), visible=True
+    )
+    notice.or_(confirm).first.wait_for(state="visible", timeout=8_000)
+    if notice.is_visible():
+        notice.click(timeout=8_000)
     confirm.wait_for(state="visible", timeout=8_000)
     if confirm.count() != 1:
         raise RuntimeError("Expected exactly one visible text-labeled trash confirmation button")

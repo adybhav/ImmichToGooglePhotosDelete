@@ -14,7 +14,7 @@ from .immich import ImmichClient, build_assets, normalize_api_url, parse_path_ma
 from .matching import match_items
 from .report import build_report, write_report
 from .takeout import scan_takeout
-from .trash import load_candidates, open_sign_in_browser, trash_candidates
+from .trash import DEFAULT_TRASH_BUTTON_PATTERN, load_candidates, open_sign_in_browser, trash_candidates
 
 
 def note(message: str) -> None:
@@ -265,8 +265,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--browser-channel", choices=("auto", "chrome", "msedge", "chromium"), default="auto",
         help="Auto-detect Chrome/Edge; chromium requires a Playwright browser install",
     )
-    trash.add_argument("--trash-button-pattern", default=r"^(Move to trash|Trash)$")
-    trash.add_argument("--confirm-button-pattern", default=r"^(Move to trash|Trash)$")
+    trash.add_argument("--trash-button-pattern", default=DEFAULT_TRASH_BUTTON_PATTERN)
+    trash.add_argument("--confirm-button-pattern", default=DEFAULT_TRASH_BUTTON_PATTERN)
     trash.set_defaults(func=run_trash)
     return parser
 

@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from .trash import is_declared_candidate, load_candidates, open_sign_in_browser, trash_candidates
+from .trash import DEFAULT_TRASH_BUTTON_PATTERN, is_declared_candidate, load_candidates, open_sign_in_browser, trash_candidates
 from .util import atomic_write_json, is_google_photo_url
 from .setup import check_immich_setup, discover_immich
 
@@ -622,8 +622,8 @@ class LocalApp:
                     verified,
                     profile_dir=self.workspace / ".gphotos-browser-profile",
                     result_path=result_path,
-                    button_pattern=r"^(Move to trash|Trash)$",
-                    confirm_pattern=r"^(Move to trash|Trash)$",
+                    button_pattern=DEFAULT_TRASH_BUTTON_PATTERN,
+                    confirm_pattern=DEFAULT_TRASH_BUTTON_PATTERN,
                     browser_channel=browser_channel,
                     progress=self.log,
                     login_ready=self._wait_for_login,
